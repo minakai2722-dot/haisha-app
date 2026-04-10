@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配車最適化シミュレーター</title>
+
+    <!-- PWA設定 -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+
+    <!-- iOS向けPWA設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="配車シミュレーター">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 イベント配車最適化シミュレーター</h1>
+        <p class="subtitle">移動時間・人間関係を考慮した最適な配車を自動計算します</p>
+        <hr>
+
+        <!-- APIキー設定（折りたたみ） -->
+        <details class="section api-section">
+            <summary>⚙️ API設定（任意 - 高精度最適化）</summary>
+            <div class="api-inner">
+                <div class="input-row">
+                    <label>Google Maps APIキー</label>
+                    <input type="text" id="gmaps-key" placeholder="AIza... (移動時間取得に使用)">
+                </div>
+                <div class="input-row">
+                    <label>Fixstars Amplify APIキー</label>
+                    <input type="text" id="fixstars-key" placeholder="AE/... (量子最適化に使用)">
+                </div>
+                <div class="input-row">
+                    <label>到着希望時刻</label>
+                    <input type="datetime-local" id="target-arrival">
+                </div>
+                <p class="hint">※APIキーを入力しない場合は、グリーディ法（近似）で配車します。</p>
+            </div>
+        </details>
+
+        <!-- メンバー入力 -->
+        <div class="section">
+            <h2>1. メンバーを追加</h2>
+            <div id="member-inputs"></div>
+            <button class="btn-secondary" onclick="addMemberInput(false)">＋ 乗客を追加</button>
+            <button class="btn-secondary btn-driver" onclick="addMemberInput(true)">＋ 運転手を追加</button>
+        </div>
+
+        <!-- 計算ボタン -->
+        <div class="section center">
+            <button class="btn-primary" onclick="calculate()">🔍 最適配車を計算する！</button>
+        </div>
+
+        <hr>
+        <div id="result-area"></div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

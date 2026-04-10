@@ -1,0 +1,22 @@
+{
+    "name": "イベント配車最適化シミュレーター",
+    "short_name": "配車シミュレーター",
+    "description": "移動時間・人間関係を考慮した最適な配車を自動計算するアプリ",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f0f4f8",
+    "theme_color": "#2563eb",
+    "lang": "ja",
+    "icons": [
+        {
+            "src": "/static/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/static/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
