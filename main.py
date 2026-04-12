@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import os
 import json
-import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,9 +22,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
 # ==========================================
 # 入力データの構造定義
 # ==========================================
@@ -45,14 +38,17 @@ class EventData(BaseModel):
     target_arrival: Optional[str] = ""
     p_score: Optional[int] = -5
 
-# ==========================================
-# ルーティング
-# ==========================================
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {})
+class FormConfig(BaseModel):
+    access_token: str
+    event_name: str = "イベント参加フォーム"
 
+class SheetConfig(BaseModel):
+    access_token: str
+    spreadsheet_id: str
 
+# ==========================================
+# 配車計算エンドポイント
+# ==========================================
 @app.post("/assign")
 async def assign_members(data: EventData):
     members = data.members
@@ -64,17 +60,14 @@ async def assign_members(data: EventData):
     if not passengers:
         return {"error": "乗客が1人もいません。"}
 
-    # 各車の定員リスト（運転手含む）
     C = [(d.capacity or 4) for d in drivers]
     total_seats = sum(c - 1 for c in C)
 
     if len(passengers) > total_seats:
         return {"error": f"有効シート数({total_seats}席)が乗客数({len(passengers)}名)より少ないため、全員を配車できません。"}
 
-    # 人間関係行列の生成（乗客同士 W、乗客-運転手 driver_W）
     W, driver_W = build_relation_matrix(passengers, drivers, data.p_score or -5)
 
-    # Google Maps Distance Matrix APIで移動時間行列を取得
     d_matrix = None
     if GOOGLE_MAPS_API_KEY:
         try:
@@ -84,13 +77,12 @@ async def assign_members(data: EventData):
                 GOOGLE_MAPS_API_KEY,
                 data.target_arrival
             )
-        except Exception as e:
+        except Exception:
             d_matrix = None
 
     if d_matrix is None:
         d_matrix = [[0] * len(drivers) for _ in range(len(passengers))]
 
-    # Amplifyによる最適化
     if FIXSTARS_API_KEY:
         try:
             result = run_optimization_amplify(
@@ -100,13 +92,11 @@ async def assign_members(data: EventData):
         except Exception:
             pass
 
-    # フォールバック：グリーディ配車
     return run_greedy_assignment(passengers, drivers, d_matrix, C, W, driver_W)
 
 
 # ==========================================
 # 人間関係行列の生成
-# W：乗客同士、driver_W：乗客と運転手
 # ==========================================
 def build_relation_matrix(
     passengers: List[Member],
@@ -119,12 +109,10 @@ def build_relation_matrix(
     p_idx_map = {p.name: i for i, p in enumerate(passengers)}
     d_idx_map = {d.name: k for k, d in enumerate(drivers)}
 
-    # 感情辞書の初期化
     pref_p2p = {i: {j: 'NEUTRAL' for j in range(n_passengers)} for i in range(n_passengers)}
     pref_p2d = {i: {k: 'NEUTRAL' for k in range(n_drivers)} for i in range(n_passengers)}
     pref_d2p = {k: {i: 'NEUTRAL' for i in range(n_passengers)} for k in range(n_drivers)}
 
-    # 乗客の感情を処理
     for i, p in enumerate(passengers):
         for person in (p.want_with or []):
             person = person.strip()
@@ -139,7 +127,6 @@ def build_relation_matrix(
             elif person in d_idx_map:
                 pref_p2d[i][d_idx_map[person]] = 'AWKWARD'
 
-    # 運転手の感情を処理
     for k, d in enumerate(drivers):
         for person in (d.want_with or []):
             person = person.strip()
@@ -150,7 +137,6 @@ def build_relation_matrix(
             if person in p_idx_map:
                 pref_d2p[k][p_idx_map[person]] = 'AWKWARD'
 
-    # 乗客同士の行列 W を確定
     W = [[0] * n_passengers for _ in range(n_passengers)]
     for i in range(n_passengers):
         for j in range(i + 1, n_passengers):
@@ -165,7 +151,6 @@ def build_relation_matrix(
             W[i][j] = score
             W[j][i] = score
 
-    # 乗客-運転手の行列 driver_W を確定
     driver_W = [[0] * n_drivers for _ in range(n_passengers)]
     for i in range(n_passengers):
         for k in range(n_drivers):
@@ -212,7 +197,6 @@ def get_distance_matrix(
     cache = load_json(CACHE_FILE, {})
     usage = load_json(USAGE_FILE, {"total_elements": 0})
 
-    # キャッシュにない乗客駅を抽出
     missing_p_stations = []
     for p in passenger_stations:
         for d in driver_stations:
@@ -220,7 +204,6 @@ def get_distance_matrix(
                 if p not in missing_p_stations:
                     missing_p_stations.append(p)
 
-    # バッチ処理（100要素制限対策）
     if missing_p_stations:
         max_p_per_request = max(1, min(25, 100 // len(driver_stations)))
 
@@ -291,7 +274,6 @@ def run_optimization_amplify(
     gen = VariableGenerator()
     x = gen.array("Binary", (num_people, num_cars))
 
-    # 目的関数
     distance_cost = asum(
         d_matrix[i][k] * x[i, k]
         for i in range(num_people)
@@ -310,7 +292,6 @@ def run_optimization_amplify(
     )
     objective = alpha * distance_cost + beta * relation_cost + beta * driver_relation_cost
 
-    # 制約条件
     one_hot_constraints = [
         equal_to(asum(x[i, k] for k in range(num_cars)), 1)
         for i in range(num_people)
@@ -382,7 +363,6 @@ def run_greedy_assignment(
         for k in range(num_cars):
             if car_counts[k] >= C[k] - 1:
                 continue
-            # 移動時間コスト + 乗客同士の人間関係 + 運転手との人間関係
             score = d_matrix[i][k] + driver_W[i][k]
             for j in range(num_people):
                 if assignment[j] == k:
@@ -417,10 +397,6 @@ def run_greedy_assignment(
 # ==========================================
 # Google Forms API - フォーム自動作成
 # ==========================================
-class FormConfig(BaseModel):
-    access_token: str
-    event_name: str = "イベント参加フォーム"
-
 @app.post("/create-form")
 async def create_form(config: FormConfig):
     import requests
@@ -430,7 +406,6 @@ async def create_form(config: FormConfig):
         "Content-Type": "application/json"
     }
 
-    # フォームの基本情報を作成
     form_body = {
         "info": {
             "title": config.event_name,
@@ -450,16 +425,10 @@ async def create_form(config: FormConfig):
     form = res.json()
     form_id = form["formId"]
 
-    # 質問項目を追加
     questions = [
         {"title": "名前", "required": True, "type": "SHORT_ANSWER"},
         {"title": "最寄り駅", "required": True, "type": "SHORT_ANSWER"},
-        {
-            "title": "参加形態",
-            "required": True,
-            "type": "RADIO",
-            "options": ["運転手", "乗客"]
-        },
+        {"title": "参加形態", "required": True, "type": "RADIO", "options": ["運転手", "乗客"]},
         {"title": "定員（運転手の方のみ・数字で入力）", "required": False, "type": "SHORT_ANSWER"},
         {"title": "一緒になりたい人（カンマ区切り）", "required": False, "type": "SHORT_ANSWER"},
         {"title": "気まずい人（カンマ区切り）", "required": False, "type": "SHORT_ANSWER"},
@@ -472,15 +441,12 @@ async def create_form(config: FormConfig):
                 "item": {
                     "title": q["title"],
                     "questionItem": {
-                        "question": {
-                            "required": q["required"],
-                        }
+                        "question": {"required": q["required"]}
                     }
                 },
                 "location": {"index": idx}
             }
         }
-
         if q["type"] == "SHORT_ANSWER":
             item["createItem"]["item"]["questionItem"]["question"]["textQuestion"] = {}
         elif q["type"] == "RADIO":
@@ -488,7 +454,6 @@ async def create_form(config: FormConfig):
                 "type": "RADIO",
                 "options": [{"value": opt} for opt in q["options"]]
             }
-
         requests_body["requests"].append(item)
 
     batch_res = requests.post(
@@ -500,32 +465,23 @@ async def create_form(config: FormConfig):
     if batch_res.status_code != 200:
         return {"error": f"質問の追加に失敗しました: {batch_res.text}"}
 
-    form_url = f"https://docs.google.com/forms/d/{form_id}/viewform"
-    responder_url = f"https://docs.google.com/forms/d/{form_id}/viewform"
-    sheet_url = f"https://docs.google.com/forms/d/{form_id}/edit#responses"
-
     return {
         "form_id": form_id,
-        "form_url": responder_url,
+        "form_url": f"https://docs.google.com/forms/d/{form_id}/viewform",
         "edit_url": f"https://docs.google.com/forms/d/{form_id}/edit",
-        "sheet_url": sheet_url,
+        "sheet_url": f"https://docs.google.com/forms/d/{form_id}/edit#responses",
     }
 
 
 # ==========================================
 # Google Sheets API - 回答の自動取得
 # ==========================================
-class SheetConfig(BaseModel):
-    access_token: str
-    spreadsheet_id: str
-
 @app.post("/get-responses")
 async def get_responses(config: SheetConfig):
     import requests
 
     headers = {"Authorization": f"Bearer {config.access_token}"}
 
-    # スプレッドシートのデータを取得
     res = requests.get(
         f"https://sheets.googleapis.com/v4/spreadsheets/{config.spreadsheet_id}/values/A:Z",
         headers=headers
@@ -541,23 +497,19 @@ async def get_responses(config: SheetConfig):
         return {"error": "回答がまだありません。"}
 
     headers_row = rows[0]
-    responses = []
+    members = []
 
     for row in rows[1:]:
         entry = {}
         for i, header in enumerate(headers_row):
             entry[header] = row[i] if i < len(row) else ""
-        responses.append(entry)
 
-    # 配車アプリ用のメンバー形式に変換
-    members = []
-    for r in responses:
-        name = r.get("名前", "").strip()
-        station = r.get("最寄り駅", "").strip()
-        role = r.get("参加形態", "乗客").strip()
-        capacity = r.get("定員（運転手の方のみ・数字で入力）", "4").strip()
-        want_with = r.get("一緒になりたい人（カンマ区切り）", "").strip()
-        awkward_with = r.get("気まずい人（カンマ区切り）", "").strip()
+        name = entry.get("名前", "").strip()
+        station = entry.get("最寄り駅", "").strip()
+        role = entry.get("参加形態", "乗客").strip()
+        capacity = entry.get("定員（運転手の方のみ・数字で入力）", "4").strip()
+        want_with = entry.get("一緒になりたい人（カンマ区切り）", "").strip()
+        awkward_with = entry.get("気まずい人（カンマ区切り）", "").strip()
 
         if not name or not station:
             continue
