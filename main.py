@@ -64,10 +64,17 @@ async def assign_members(data: EventData):
     if not passengers:
         return {"error": "乗客が1人もいません。"}
 
-    total_seats = sum((m.capacity or 4) - 1 for m in drivers)
+    # 各車の定員リスト（運転手含む）
+    C = [(d.capacity or 4) for d in drivers]
+    total_seats = sum(c - 1 for c in C)
+
     if len(passengers) > total_seats:
         return {"error": f"有効シート数({total_seats}席)が乗客数({len(passengers)}名)より少ないため、全員を配車できません。"}
 
+    # 人間関係行列の生成（乗客同士 W、乗客-運転手 driver_W）
+    W, driver_W = build_relation_matrix(passengers, drivers, data.p_score or -5)
+
+    # Google Maps Distance Matrix APIで移動時間行列を取得
     d_matrix = None
     if GOOGLE_MAPS_API_KEY:
         try:
@@ -83,43 +90,72 @@ async def assign_members(data: EventData):
     if d_matrix is None:
         d_matrix = [[0] * len(drivers) for _ in range(len(passengers))]
 
-    W = build_relation_matrix(passengers, data.p_score or -5)
-
+    # Amplifyによる最適化
     if FIXSTARS_API_KEY:
         try:
             result = run_optimization_amplify(
-                passengers, drivers, d_matrix, W, FIXSTARS_API_KEY
+                passengers, drivers, d_matrix, C, W, driver_W, FIXSTARS_API_KEY
             )
             return result
-        except Exception as e:
+        except Exception:
             pass
 
-    result = run_greedy_assignment(passengers, drivers, d_matrix, W)
-    return result
+    # フォールバック：グリーディ配車
+    return run_greedy_assignment(passengers, drivers, d_matrix, C, W, driver_W)
 
 
 # ==========================================
-# 人間関係行列 W の生成
+# 人間関係行列の生成
+# W：乗客同士、driver_W：乗客と運転手
 # ==========================================
-def build_relation_matrix(passengers: List[Member], p_score: int) -> List[List[int]]:
-    n = len(passengers)
-    name_to_idx = {p.name: i for i, p in enumerate(passengers)}
+def build_relation_matrix(
+    passengers: List[Member],
+    drivers: List[Member],
+    p_score: int
+):
+    n_passengers = len(passengers)
+    n_drivers = len(drivers)
 
-    pref = {i: {j: 'NEUTRAL' for j in range(n)} for i in range(n)}
+    p_idx_map = {p.name: i for i, p in enumerate(passengers)}
+    d_idx_map = {d.name: k for k, d in enumerate(drivers)}
 
+    # 感情辞書の初期化
+    pref_p2p = {i: {j: 'NEUTRAL' for j in range(n_passengers)} for i in range(n_passengers)}
+    pref_p2d = {i: {k: 'NEUTRAL' for k in range(n_drivers)} for i in range(n_passengers)}
+    pref_d2p = {k: {i: 'NEUTRAL' for i in range(n_passengers)} for k in range(n_drivers)}
+
+    # 乗客の感情を処理
     for i, p in enumerate(passengers):
-        for friend in (p.want_with or []):
-            if friend in name_to_idx:
-                pref[i][name_to_idx[friend]] = 'WANT'
-        for awkward in (p.awkward_with or []):
-            if awkward in name_to_idx:
-                pref[i][name_to_idx[awkward]] = 'AWKWARD'
+        for person in (p.want_with or []):
+            person = person.strip()
+            if person in p_idx_map:
+                pref_p2p[i][p_idx_map[person]] = 'WANT'
+            elif person in d_idx_map:
+                pref_p2d[i][d_idx_map[person]] = 'WANT'
+        for person in (p.awkward_with or []):
+            person = person.strip()
+            if person in p_idx_map:
+                pref_p2p[i][p_idx_map[person]] = 'AWKWARD'
+            elif person in d_idx_map:
+                pref_p2d[i][d_idx_map[person]] = 'AWKWARD'
 
-    W = [[0] * n for _ in range(n)]
-    for i in range(n):
-        for j in range(i + 1, n):
-            p1 = pref[i][j]
-            p2 = pref[j][i]
+    # 運転手の感情を処理
+    for k, d in enumerate(drivers):
+        for person in (d.want_with or []):
+            person = person.strip()
+            if person in p_idx_map:
+                pref_d2p[k][p_idx_map[person]] = 'WANT'
+        for person in (d.awkward_with or []):
+            person = person.strip()
+            if person in p_idx_map:
+                pref_d2p[k][p_idx_map[person]] = 'AWKWARD'
+
+    # 乗客同士の行列 W を確定
+    W = [[0] * n_passengers for _ in range(n_passengers)]
+    for i in range(n_passengers):
+        for j in range(i + 1, n_passengers):
+            p1 = pref_p2p[i][j]
+            p2 = pref_p2p[j][i]
             if p1 == 'AWKWARD' or p2 == 'AWKWARD':
                 score = 100
             elif p1 == 'WANT' or p2 == 'WANT':
@@ -128,14 +164,29 @@ def build_relation_matrix(passengers: List[Member], p_score: int) -> List[List[i
                 score = 0
             W[i][j] = score
             W[j][i] = score
-    return W
+
+    # 乗客-運転手の行列 driver_W を確定
+    driver_W = [[0] * n_drivers for _ in range(n_passengers)]
+    for i in range(n_passengers):
+        for k in range(n_drivers):
+            p1 = pref_p2d[i][k]
+            p2 = pref_d2p[k][i]
+            if p1 == 'AWKWARD' or p2 == 'AWKWARD':
+                score = 100
+            elif p1 == 'WANT' or p2 == 'WANT':
+                score = p_score
+            else:
+                score = 0
+            driver_W[i][k] = score
+
+    return W, driver_W
 
 
 # ==========================================
-# Google Maps Distance Matrix API（キャッシュ付き）
+# Google Maps Distance Matrix API（バッチ処理＋キャッシュ付き）
 # ==========================================
 CACHE_FILE = 'distance_cache.json'
-USAGE_FILE  = 'usage_stats.json'
+USAGE_FILE = 'usage_stats.json'
 MONTHLY_LIMIT = 5000
 
 def load_json(filename, default):
@@ -161,39 +212,49 @@ def get_distance_matrix(
     cache = load_json(CACHE_FILE, {})
     usage = load_json(USAGE_FILE, {"total_elements": 0})
 
-    missing_p, missing_d = [], []
+    # キャッシュにない乗客駅を抽出
+    missing_p_stations = []
     for p in passenger_stations:
         for d in driver_stations:
             if f"{p}_{d}" not in cache:
-                if p not in missing_p: missing_p.append(p)
-                if d not in missing_d: missing_d.append(d)
+                if p not in missing_p_stations:
+                    missing_p_stations.append(p)
 
-    if missing_p and missing_d:
-        requested = len(missing_p) * len(missing_d)
-        if usage["total_elements"] + requested > MONTHLY_LIMIT:
-            raise Exception("APIの月間使用上限に達しました。")
+    # バッチ処理（100要素制限対策）
+    if missing_p_stations:
+        max_p_per_request = max(1, min(25, 100 // len(driver_stations)))
 
-        kwargs = dict(
-            origins=missing_p,
-            destinations=missing_d,
-            mode="transit",
-            language="ja",
-            transit_mode=["bus", "rail"]
-        )
-        if target_arrival_str:
-            try:
-                kwargs["arrival_time"] = datetime.fromisoformat(target_arrival_str)
-            except ValueError:
-                pass
+        for i in range(0, len(missing_p_stations), max_p_per_request):
+            chunk = missing_p_stations[i: i + max_p_per_request]
+            requested = len(chunk) * len(driver_stations)
 
-        result = gmaps.distance_matrix(**kwargs)
+            if usage["total_elements"] + requested > MONTHLY_LIMIT:
+                raise Exception("APIの月間使用上限に達しました。")
 
-        for p_idx, row in enumerate(result['rows']):
-            for d_idx, element in enumerate(row['elements']):
-                key = f"{missing_p[p_idx]}_{missing_d[d_idx]}"
-                cache[key] = element['duration']['value'] // 60 if element['status'] == 'OK' else 999
+            kwargs = dict(
+                origins=chunk,
+                destinations=driver_stations,
+                mode="transit",
+                language="ja",
+                transit_mode=["bus", "rail"]
+            )
+            if target_arrival_str:
+                try:
+                    kwargs["arrival_time"] = datetime.fromisoformat(target_arrival_str)
+                except ValueError:
+                    pass
 
-        usage["total_elements"] += requested
+            result = gmaps.distance_matrix(**kwargs)
+
+            for p_idx, row in enumerate(result['rows']):
+                p_station = chunk[p_idx]
+                for d_idx, element in enumerate(row['elements']):
+                    d_station = driver_stations[d_idx]
+                    key = f"{p_station}_{d_station}"
+                    cache[key] = element['duration']['value'] // 60 if element['status'] == 'OK' else 999
+
+            usage["total_elements"] += requested
+
         save_json(USAGE_FILE, usage)
         save_json(CACHE_FILE, cache)
 
@@ -210,7 +271,9 @@ def run_optimization_amplify(
     passengers: List[Member],
     drivers: List[Member],
     d_matrix: List[List[int]],
+    C: List[int],
     W: List[List[int]],
+    driver_W: List[List[int]],
     fixstars_key: str
 ) -> dict:
     from amplify import VariableGenerator, Model, solve, equal_to, less_equal
@@ -218,24 +281,46 @@ def run_optimization_amplify(
     from amplify import sum as asum
 
     num_people = len(passengers)
-    num_cars   = len(drivers)
-    C = [(d.capacity or 4) for d in drivers]
+    num_cars = len(drivers)
 
-    alpha    = 1.0
-    beta     = 1.0
+    alpha = 1.0
+    beta = 1.0
     lambda_1 = 5000.0
     lambda_2 = 5000.0
 
     gen = VariableGenerator()
     x = gen.array("Binary", (num_people, num_cars))
 
-    distance_cost      = asum(d_matrix[i][k] * x[i, k] for i in range(num_people) for k in range(num_cars))
-    relation_cost      = asum(W[i][j] * x[i, k] * x[j, k] for i in range(num_people) for j in range(i+1, num_people) for k in range(num_cars))
-    objective          = alpha * distance_cost + beta * relation_cost
+    # 目的関数
+    distance_cost = asum(
+        d_matrix[i][k] * x[i, k]
+        for i in range(num_people)
+        for k in range(num_cars)
+    )
+    relation_cost = asum(
+        W[i][j] * x[i, k] * x[j, k]
+        for i in range(num_people)
+        for j in range(i + 1, num_people)
+        for k in range(num_cars)
+    )
+    driver_relation_cost = asum(
+        driver_W[i][k] * x[i, k]
+        for i in range(num_people)
+        for k in range(num_cars)
+    )
+    objective = alpha * distance_cost + beta * relation_cost + beta * driver_relation_cost
 
-    one_hot_constraints  = [equal_to(asum(x[i, k] for k in range(num_cars)), 1) for i in range(num_people)]
-    capacity_constraints = [less_equal(asum(x[i, k] for i in range(num_people)), C[k] - 1) for k in range(num_cars)]
-    constraints = asum(c * lambda_1 for c in one_hot_constraints) + asum(c * lambda_2 for c in capacity_constraints)
+    # 制約条件
+    one_hot_constraints = [
+        equal_to(asum(x[i, k] for k in range(num_cars)), 1)
+        for i in range(num_people)
+    ]
+    capacity_constraints = [
+        less_equal(asum(x[i, k] for i in range(num_people)), C[k] - 1)
+        for k in range(num_cars)
+    ]
+    constraints = asum(c * lambda_1 for c in one_hot_constraints) + \
+                  asum(c * lambda_2 for c in capacity_constraints)
 
     model = Model(objective, constraints)
     client = FixstarsClient()
@@ -281,11 +366,12 @@ def run_greedy_assignment(
     passengers: List[Member],
     drivers: List[Member],
     d_matrix: List[List[int]],
-    W: List[List[int]]
+    C: List[int],
+    W: List[List[int]],
+    driver_W: List[List[int]]
 ) -> dict:
     num_people = len(passengers)
-    num_cars   = len(drivers)
-    C = [(d.capacity or 4) for d in drivers]
+    num_cars = len(drivers)
 
     assignment = [-1] * num_people
     car_counts = [0] * num_cars
@@ -296,7 +382,8 @@ def run_greedy_assignment(
         for k in range(num_cars):
             if car_counts[k] >= C[k] - 1:
                 continue
-            score = d_matrix[i][k]
+            # 移動時間コスト + 乗客同士の人間関係 + 運転手との人間関係
+            score = d_matrix[i][k] + driver_W[i][k]
             for j in range(num_people):
                 if assignment[j] == k:
                     score += W[i][j]
