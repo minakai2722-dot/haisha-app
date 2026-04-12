@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import SessionWrapper from "@/components/SessionWrapper";
 
 const geist = Geist({ subsets: ["latin"] });
 
@@ -17,14 +18,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body className={`${geist.className} bg-gray-50`}>
-        <Navbar />
-        {/* サイドバー分のマージン（PC）/ ボトムバー分のパディング（モバイル） */}
-        <main className="md:ml-56 pb-20 md:pb-0 min-h-screen">
-          <div className="max-w-2xl mx-auto px-4 py-8">
-            {children}
-          </div>
-        </main>
+      <body className={`${geist.className} bg-gray-50 dark:bg-gray-950`}>
+        <SessionWrapper>
+          <Navbar />
+          <main className="md:ml-56 pb-20 md:pb-0 min-h-screen">
+            <div className="max-w-2xl mx-auto px-4 py-8">
+              {children}
+            </div>
+          </main>
+        </SessionWrapper>
       </body>
     </html>
   );
