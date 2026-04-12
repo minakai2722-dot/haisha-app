@@ -412,3 +412,163 @@ def run_greedy_assignment(
         "unassigned": unassigned,
         "method": "greedy"
     }
+
+
+# ==========================================
+# Google Forms API - フォーム自動作成
+# ==========================================
+class FormConfig(BaseModel):
+    access_token: str
+    event_name: str = "イベント参加フォーム"
+
+@app.post("/create-form")
+async def create_form(config: FormConfig):
+    import requests
+
+    headers = {
+        "Authorization": f"Bearer {config.access_token}",
+        "Content-Type": "application/json"
+    }
+
+    # フォームの基本情報を作成
+    form_body = {
+        "info": {
+            "title": config.event_name,
+            "documentTitle": config.event_name
+        }
+    }
+
+    res = requests.post(
+        "https://forms.googleapis.com/v1/forms",
+        headers=headers,
+        json=form_body
+    )
+
+    if res.status_code != 200:
+        return {"error": f"フォーム作成に失敗しました: {res.text}"}
+
+    form = res.json()
+    form_id = form["formId"]
+
+    # 質問項目を追加
+    questions = [
+        {"title": "名前", "required": True, "type": "SHORT_ANSWER"},
+        {"title": "最寄り駅", "required": True, "type": "SHORT_ANSWER"},
+        {
+            "title": "参加形態",
+            "required": True,
+            "type": "RADIO",
+            "options": ["運転手", "乗客"]
+        },
+        {"title": "定員（運転手の方のみ・数字で入力）", "required": False, "type": "SHORT_ANSWER"},
+        {"title": "一緒になりたい人（カンマ区切り）", "required": False, "type": "SHORT_ANSWER"},
+        {"title": "気まずい人（カンマ区切り）", "required": False, "type": "SHORT_ANSWER"},
+    ]
+
+    requests_body = {"requests": []}
+    for idx, q in enumerate(questions):
+        item = {
+            "createItem": {
+                "item": {
+                    "title": q["title"],
+                    "questionItem": {
+                        "question": {
+                            "required": q["required"],
+                        }
+                    }
+                },
+                "location": {"index": idx}
+            }
+        }
+
+        if q["type"] == "SHORT_ANSWER":
+            item["createItem"]["item"]["questionItem"]["question"]["textQuestion"] = {}
+        elif q["type"] == "RADIO":
+            item["createItem"]["item"]["questionItem"]["question"]["choiceQuestion"] = {
+                "type": "RADIO",
+                "options": [{"value": opt} for opt in q["options"]]
+            }
+
+        requests_body["requests"].append(item)
+
+    batch_res = requests.post(
+        f"https://forms.googleapis.com/v1/forms/{form_id}:batchUpdate",
+        headers=headers,
+        json=requests_body
+    )
+
+    if batch_res.status_code != 200:
+        return {"error": f"質問の追加に失敗しました: {batch_res.text}"}
+
+    form_url = f"https://docs.google.com/forms/d/{form_id}/viewform"
+    responder_url = f"https://docs.google.com/forms/d/{form_id}/viewform"
+    sheet_url = f"https://docs.google.com/forms/d/{form_id}/edit#responses"
+
+    return {
+        "form_id": form_id,
+        "form_url": responder_url,
+        "edit_url": f"https://docs.google.com/forms/d/{form_id}/edit",
+        "sheet_url": sheet_url,
+    }
+
+
+# ==========================================
+# Google Sheets API - 回答の自動取得
+# ==========================================
+class SheetConfig(BaseModel):
+    access_token: str
+    spreadsheet_id: str
+
+@app.post("/get-responses")
+async def get_responses(config: SheetConfig):
+    import requests
+
+    headers = {"Authorization": f"Bearer {config.access_token}"}
+
+    # スプレッドシートのデータを取得
+    res = requests.get(
+        f"https://sheets.googleapis.com/v4/spreadsheets/{config.spreadsheet_id}/values/A:Z",
+        headers=headers
+    )
+
+    if res.status_code != 200:
+        return {"error": f"データの取得に失敗しました: {res.text}"}
+
+    data = res.json()
+    rows = data.get("values", [])
+
+    if len(rows) < 2:
+        return {"error": "回答がまだありません。"}
+
+    headers_row = rows[0]
+    responses = []
+
+    for row in rows[1:]:
+        entry = {}
+        for i, header in enumerate(headers_row):
+            entry[header] = row[i] if i < len(row) else ""
+        responses.append(entry)
+
+    # 配車アプリ用のメンバー形式に変換
+    members = []
+    for r in responses:
+        name = r.get("名前", "").strip()
+        station = r.get("最寄り駅", "").strip()
+        role = r.get("参加形態", "乗客").strip()
+        capacity = r.get("定員（運転手の方のみ・数字で入力）", "4").strip()
+        want_with = r.get("一緒になりたい人（カンマ区切り）", "").strip()
+        awkward_with = r.get("気まずい人（カンマ区切り）", "").strip()
+
+        if not name or not station:
+            continue
+
+        members.append({
+            "name": name,
+            "station": station,
+            "can_drive": role == "運転手",
+            "capacity": int(capacity) if capacity.isdigit() else 4,
+            "want_with": [w.strip() for w in want_with.split(",") if w.strip()],
+            "awkward_with": [a.strip() for a in awkward_with.split(",") if a.strip()],
+        })
+
+    return {"members": members, "count": len(members)}
