@@ -399,18 +399,13 @@ export default function HaishaForm() {
 
       {/* STEP 3: CSVアップロード（Googleログインしていない場合の代替） */}
       <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-colors">
-        <div className="flex items-center gap-2 mb-3">
-          <StepBadge n={session ? 3 : 1} />
-          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {session ? "または CSVから読み込む" : "CSVから読み込む"}
-          </h2>
-        </div>
-        <div onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-xl p-5 text-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
-          <p className="text-xl mb-1">📂</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{csvFileName ? csvFileName : "CSVファイルをクリックして選択"}</p>
-          <p className="text-xs text-gray-400 mt-1">Google スプレッドシート → ファイル → ダウンロード → CSV</p>
-          <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <StepBadge n={session ? 3 : 1} />
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {session ? "または CSVから読み込む" : "CSVから読み込む"}
+            </h2>
+          </div>
           <button
             onClick={() => {
               const csv = [
@@ -427,10 +422,17 @@ export default function HaishaForm() {
               a.click();
               URL.revokeObjectURL(url);
             }}
-            className="mt-3 w-full text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
           >
-            📥 CSVテンプレートをダウンロード
-          </button>          
+            📥 テンプレートDL
+          </button>
+        </div>
+        <div onClick={() => fileInputRef.current?.click()}
+          className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-xl p-5 text-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
+          <p className="text-xl mb-1">📂</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{csvFileName ? csvFileName : "CSVファイルをクリックして選択"}</p>
+          <p className="text-xs text-gray-400 mt-1">Google スプレッドシート → ファイル → ダウンロード → CSV</p>
+          <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
         </div>
         {csvRows.length > 0 && (
           <div className="mt-3 animate-slide-up">
