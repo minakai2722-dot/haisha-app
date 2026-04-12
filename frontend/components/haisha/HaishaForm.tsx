@@ -411,6 +411,26 @@ export default function HaishaForm() {
           <p className="text-sm text-gray-500 dark:text-gray-400">{csvFileName ? csvFileName : "CSVファイルをクリックして選択"}</p>
           <p className="text-xs text-gray-400 mt-1">Google スプレッドシート → ファイル → ダウンロード → CSV</p>
           <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+          <button
+            onClick={() => {
+              const csv = [
+                "名前,最寄り駅,参加形態,定員,一緒になりたい人（カンマ区切り）,気まずい人（カンマ区切り）",
+                "田中,新宿,運転手,4,山田,",
+                "山田,渋谷,乗客,,,",
+                "鈴木,池袋,乗客,,田中,",
+              ].join("\n");
+              const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "haisha_template.csv";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="mt-3 w-full text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            📥 CSVテンプレートをダウンロード
+          </button>          
         </div>
         {csvRows.length > 0 && (
           <div className="mt-3 animate-slide-up">
@@ -497,37 +517,21 @@ export default function HaishaForm() {
                   </div>
                 )}
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <details className="flex-1">
-                  <summary className="text-xs text-gray-400 cursor-pointer">CSVのフォーマットを確認する</summary>
-                  <div className="mt-2 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-xs text-gray-500 dark:text-gray-400 font-mono">
-                    名前,最寄り駅,参加形態,定員,一緒になりたい人（カンマ区切り）,気まずい人（カンマ区切り）<br/>
-                    田中,新宿,運転手,4,山田,<br/>
-                    山田,渋谷,乗客,,,<br/>
-                    鈴木,池袋,乗客,,田中,
-                  </div>
-                </details>
-                <button
-                  onClick={() => {
-                    const csv = [
-                      "名前,最寄り駅,参加形態,定員,一緒になりたい人（カンマ区切り）,気まずい人（カンマ区切り）",
-                      "田中,新宿,運転手,4,山田,",
-                      "山田,渋谷,乗客,,,",
-                      "鈴木,池袋,乗客,,田中,",
-                    ].join("\n");
-                    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = "haisha_template.csv";
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 whitespace-nowrap transition-colors flex-shrink-0"
-                >
-                  📥 テンプレートDL
-                </button>
-              </div>              
+              <details className="mt-1">
+                <summary className="text-xs text-gray-400 cursor-pointer select-none">人間関係（任意）</summary>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {[
+                    { label: "一緒になりたい人", field: "want_with" as keyof Member, placeholder: "山田, 鈴木" },
+                    { label: "気まずい人", field: "awkward_with" as keyof Member, placeholder: "佐藤" },
+                  ].map(({ label, field, placeholder }) => (
+                    <div key={field as string}>
+                      <label className="text-xs text-gray-400 block mb-1">{label}</label>
+                      <input type="text" value={m[field] as string} onChange={(e) => updateMember(m.id, field, e.target.value)} placeholder={placeholder}
+                        className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
+                    </div>
+                  ))}
+                </div>
+              </details>
             </div>
           ))}
         </div>
