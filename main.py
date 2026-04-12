@@ -3,22 +3,29 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import os
 import json
 import sys
+from dotenv import load_dotenv
+
+load_dotenv()
+
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+FIXSTARS_API_KEY = os.environ.get("FIXSTARS_API_KEY", "")
 
 app = FastAPI()
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://haisha-app.vercel.app"],
+    allow_origins=["https://haisha-app.vercel.app", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -29,16 +36,14 @@ class Member(BaseModel):
     name: str
     station: str
     can_drive: bool
-    capacity: Optional[int] = None       # 運転手の場合の定員（運転手含む）
-    want_with: Optional[List[str]] = []  # 一緒になりたい人のリスト
-    awkward_with: Optional[List[str]] = []  # 気まずい人のリスト
+    capacity: Optional[int] = None
+    want_with: Optional[List[str]] = []
+    awkward_with: Optional[List[str]] = []
 
 class EventData(BaseModel):
     members: List[Member]
-    google_maps_api_key: Optional[str] = ""
-    fixstars_api_key: Optional[str] = ""
-    target_arrival: Optional[str] = ""   # "YYYY-MM-DDTHH:MM" 形式
-    p_score: Optional[int] = -5          # 仲が良い場合の報酬スコア
+    target_arrival: Optional[str] = ""
+    p_score: Optional[int] = -5
 
 # ==========================================
 # ルーティング
@@ -59,44 +64,36 @@ async def assign_members(data: EventData):
     if not passengers:
         return {"error": "乗客が1人もいません。"}
 
-    # 定員チェック
     total_seats = sum((m.capacity or 4) - 1 for m in drivers)
     if len(passengers) > total_seats:
         return {"error": f"有効シート数({total_seats}席)が乗客数({len(passengers)}名)より少ないため、全員を配車できません。"}
 
-    # Google Maps API で移動時間行列を取得（APIキーがある場合）
     d_matrix = None
-    if data.google_maps_api_key:
+    if GOOGLE_MAPS_API_KEY:
         try:
             d_matrix = get_distance_matrix(
                 [p.station for p in passengers],
                 [d.station for d in drivers],
-                data.google_maps_api_key,
+                GOOGLE_MAPS_API_KEY,
                 data.target_arrival
             )
         except Exception as e:
-            # API失敗時は均一コストにフォールバック
             d_matrix = None
 
-    # 移動時間行列がない場合は均一コスト（0）を使用
     if d_matrix is None:
         d_matrix = [[0] * len(drivers) for _ in range(len(passengers))]
 
-    # 人間関係行列 W を生成
     W = build_relation_matrix(passengers, data.p_score or -5)
 
-    # Amplifyによる最適化 or フォールバック
-    if data.fixstars_api_key:
+    if FIXSTARS_API_KEY:
         try:
             result = run_optimization_amplify(
-                passengers, drivers, d_matrix, W, data.fixstars_api_key
+                passengers, drivers, d_matrix, W, FIXSTARS_API_KEY
             )
             return result
         except Exception as e:
-            # Amplify失敗時はグリーディにフォールバック
             pass
 
-    # フォールバック：グリーディ配車（移動時間最小化＋人間関係考慮）
     result = run_greedy_assignment(passengers, drivers, d_matrix, W)
     return result
 
@@ -108,7 +105,6 @@ def build_relation_matrix(passengers: List[Member], p_score: int) -> List[List[i
     n = len(passengers)
     name_to_idx = {p.name: i for i, p in enumerate(passengers)}
 
-    # pref[i][j]: i が j に対してどう思っているか ('NEUTRAL' / 'WANT' / 'AWKWARD')
     pref = {i: {j: 'NEUTRAL' for j in range(n)} for i in range(n)}
 
     for i, p in enumerate(passengers):
@@ -125,9 +121,9 @@ def build_relation_matrix(passengers: List[Member], p_score: int) -> List[List[i
             p1 = pref[i][j]
             p2 = pref[j][i]
             if p1 == 'AWKWARD' or p2 == 'AWKWARD':
-                score = 100   # ペナルティ（同じ車は避ける）
+                score = 100
             elif p1 == 'WANT' or p2 == 'WANT':
-                score = p_score  # 報酬（同じ車に乗せる）
+                score = p_score
             else:
                 score = 0
             W[i][j] = score
@@ -219,6 +215,7 @@ def run_optimization_amplify(
 ) -> dict:
     from amplify import VariableGenerator, Model, solve, equal_to, less_equal
     from amplify.client import FixstarsClient
+    from amplify import sum as asum
 
     num_people = len(passengers)
     num_cars   = len(drivers)
@@ -232,7 +229,6 @@ def run_optimization_amplify(
     gen = VariableGenerator()
     x = gen.array("Binary", (num_people, num_cars))
 
-    from amplify import sum as asum
     distance_cost      = asum(d_matrix[i][k] * x[i, k] for i in range(num_people) for k in range(num_cars))
     relation_cost      = asum(W[i][j] * x[i, k] * x[j, k] for i in range(num_people) for j in range(i+1, num_people) for k in range(num_cars))
     objective          = alpha * distance_cost + beta * relation_cost
@@ -248,7 +244,7 @@ def run_optimization_amplify(
 
     result = solve(model, client)
     if len(result) == 0:
-        return {"error": "Amplifyで解が見つかりませんでした。制約が矛盾している可能性があります。"}
+        return {"error": "Amplifyで解が見つかりませんでした。"}
 
     best = result[0]
     x_opt = x.evaluate(best.values)
@@ -280,7 +276,6 @@ def run_optimization_amplify(
 
 # ==========================================
 # フォールバック：グリーディ配車
-# （移動時間最小 + 人間関係ペナルティ考慮）
 # ==========================================
 def run_greedy_assignment(
     passengers: List[Member],
@@ -292,19 +287,16 @@ def run_greedy_assignment(
     num_cars   = len(drivers)
     C = [(d.capacity or 4) for d in drivers]
 
-    assignment = [-1] * num_people  # assignment[i] = 車のインデックス
+    assignment = [-1] * num_people
     car_counts = [0] * num_cars
 
-    # 各乗客を、スコアが最小の車に貪欲に割り当て
     for i in range(num_people):
         best_car = -1
         best_score = float('inf')
         for k in range(num_cars):
             if car_counts[k] >= C[k] - 1:
-                continue  # 定員オーバー
-            # 移動時間コスト
+                continue
             score = d_matrix[i][k]
-            # すでに割り当てられた乗客との人間関係コスト
             for j in range(num_people):
                 if assignment[j] == k:
                     score += W[i][j]

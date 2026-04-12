@@ -69,17 +69,14 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   );
 }
 
-// CSVパース関数
 function parseCsv(text: string): CsvRow[] {
   const lines = text.trim().split("\n");
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
-
   return lines.slice(1).map((line) => {
     const values = line.split(",").map((v) => v.trim().replace(/"/g, ""));
     const row: Record<string, string> = {};
     headers.forEach((h, i) => { row[h] = values[i] || ""; });
-
     return {
       name: row["名前"] || row["name"] || "",
       station: row["最寄り駅"] || row["station"] || "",
@@ -93,16 +90,14 @@ function parseCsv(text: string): CsvRow[] {
 
 export default function HaishaForm() {
   const [members, setMembers] = useState<Member[]>([createMember(true), createMember(false), createMember(false)]);
-  const [gmapsKey, setGmapsKey] = useState("");
-  const [fixstarsKey, setFixstarsKey] = useState("");
   const [targetArrival, setTargetArrival] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showApi, setShowApi] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvFileName, setCsvFileName] = useState("");
   const [csvApplied, setCsvApplied] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addMember = (isDriver: boolean) => setMembers((prev) => [...prev, createMember(isDriver)]);
@@ -115,7 +110,6 @@ export default function HaishaForm() {
     setErrors((prev) => ({ ...prev, [`${id}-${field}`]: "" }));
   };
 
-  // CSVファイル読み込み
   const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -124,13 +118,11 @@ export default function HaishaForm() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
-      const rows = parseCsv(text);
-      setCsvRows(rows);
+      setCsvRows(parseCsv(text));
     };
     reader.readAsText(file, "UTF-8");
   };
 
-  // CSVをメンバーに反映
   const applyCsv = () => {
     const newMembers: Member[] = csvRows.map((row) => ({
       id: crypto.randomUUID(),
@@ -171,7 +163,8 @@ export default function HaishaForm() {
         want_with: m.want_with ? m.want_with.split(",").map((s) => s.trim()).filter(Boolean) : [],
         awkward_with: m.awkward_with ? m.awkward_with.split(",").map((s) => s.trim()).filter(Boolean) : [],
       })),
-      google_maps_api_key: gmapsKey, fixstars_api_key: fixstarsKey, target_arrival: targetArrival, p_score: -5,
+      target_arrival: targetArrival,
+      p_score: -5,
     };
     setLoading(true); setResult(null);
     try {
@@ -206,11 +199,9 @@ export default function HaishaForm() {
         <StatCard label="空席数" value={Math.max(0, totalSeats - passengers.length)} color="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300" />
       </div>
 
-      {/* CSVアップロードセクション */}
+      {/* CSVアップロード */}
       <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-colors">
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">📄 Google FormのCSVから読み込む</h2>
-
-        {/* アップロードエリア */}
         <div
           onClick={() => fileInputRef.current?.click()}
           className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-xl p-6 text-center cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors"
@@ -223,15 +214,12 @@ export default function HaishaForm() {
           <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
         </div>
 
-        {/* CSVプレビュー */}
         {csvRows.length > 0 && (
           <div className="mt-4 animate-slide-up">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-medium text-gray-600 dark:text-gray-400">{csvRows.length}件のデータを読み込みました</p>
               {csvApplied && <span className="text-xs text-green-600 dark:text-green-400">✅ 反映済み</span>}
             </div>
-
-            {/* プレビューテーブル */}
             <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-700">
               <table className="w-full text-xs">
                 <thead>
@@ -263,17 +251,13 @@ export default function HaishaForm() {
                 </tbody>
               </table>
             </div>
-
-            <button
-              onClick={applyCsv}
-              className="mt-3 w-full py-2.5 rounded-xl text-sm font-medium bg-green-600 hover:bg-green-700 active:scale-[0.98] text-white transition-all duration-150"
-            >
+            <button onClick={applyCsv}
+              className="mt-3 w-full py-2.5 rounded-xl text-sm font-medium bg-green-600 hover:bg-green-700 active:scale-[0.98] text-white transition-all duration-150">
               ✅ このデータでメンバーを設定する
             </button>
           </div>
         )}
 
-        {/* CSVフォーマットのヒント */}
         <details className="mt-3">
           <summary className="text-xs text-gray-400 cursor-pointer">CSVのフォーマットを確認する</summary>
           <div className="mt-2 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-xs text-gray-500 dark:text-gray-400 font-mono">
@@ -285,41 +269,28 @@ export default function HaishaForm() {
         </details>
       </div>
 
+      {/* オプション設定（到着時刻） */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-colors">
+        <button onClick={() => setShowOptions(!showOptions)}
+          className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-full text-left transition-colors">
+          <span>⏰</span><span>到着希望時刻（任意）</span>
+          <span className="ml-auto transition-transform duration-200" style={{ transform: showOptions ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+        </button>
+        {showOptions && (
+          <div className="mt-3 animate-slide-up">
+            <label className="text-xs text-gray-400 mb-1 block">到着希望時刻</label>
+            <input type="datetime-local" value={targetArrival} onChange={(e) => setTargetArrival(e.target.value)}
+              className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
+          </div>
+        )}
+      </div>
+
       {/* グローバルエラー */}
       {errors["global"] && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-600 dark:text-red-400 animate-slide-up">
           ⚠️ {errors["global"]}
         </div>
       )}
-
-      {/* API設定 */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-colors">
-        <button onClick={() => setShowApi(!showApi)}
-          className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 w-full text-left transition-colors">
-          <span>⚙️</span><span>API設定（任意・高精度最適化）</span>
-          <span className="ml-auto transition-transform duration-200" style={{ transform: showApi ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
-        </button>
-        {showApi && (
-          <div className="mt-4 space-y-3 animate-slide-up">
-            {[
-              { label: "Google Maps APIキー", val: gmapsKey, set: setGmapsKey, placeholder: "AIza..." },
-              { label: "Fixstars Amplify APIキー", val: fixstarsKey, set: setFixstarsKey, placeholder: "AE/..." },
-            ].map(({ label, val, set, placeholder }) => (
-              <div key={label}>
-                <label className="text-xs text-gray-400 mb-1 block">{label}</label>
-                <input type="text" value={val} onChange={(e) => set(e.target.value)} placeholder={placeholder}
-                  className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
-              </div>
-            ))}
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">到着希望時刻</label>
-              <input type="datetime-local" value={targetArrival} onChange={(e) => setTargetArrival(e.target.value)}
-                className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
-            </div>
-            <p className="text-xs text-gray-400">APIキーなしの場合はグリーディ法で配車します</p>
-          </div>
-        )}
-      </div>
 
       {/* メンバー入力 */}
       <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 transition-colors">
