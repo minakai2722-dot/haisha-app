@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import GoogleLoginButton from "@/components/GoogleLoginButton";
 
 const navItems = [
   { href: "/",           label: "配車最適化",    icon: "🚗" },
@@ -30,11 +31,18 @@ export default function Navbar() {
 
   return (
     <>
+      {/* サイドバー（PC） */}
       <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 px-3 py-6 fixed top-0 left-0 transition-colors duration-200">
-        <div className="mb-8 px-3">
+        <div className="mb-6 px-3">
           <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">イベント管理</h1>
           <p className="text-xs text-gray-400 mt-0.5">チームツール</p>
         </div>
+
+        {/* Googleログインボタン */}
+        <div className="px-3 mb-6">
+          <GoogleLoginButton />
+        </div>
+
         <nav className="flex flex-col gap-1 flex-1">
           {navItems.map((item) => {
             const active = pathname === item.href;
@@ -52,12 +60,15 @@ export default function Navbar() {
             );
           })}
         </nav>
+
         <button onClick={toggleDark}
           className="mx-3 mt-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
           <span>{dark ? "☀️" : "🌙"}</span>
           {dark ? "ライトモード" : "ダークモード"}
         </button>
       </aside>
+
+      {/* ボトムバー（モバイル） */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex z-50 transition-colors duration-200">
         {navItems.map((item) => {
           const active = pathname === item.href;
