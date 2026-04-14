@@ -5,6 +5,8 @@ import { useSession } from "next-auth/react";
 import { useCalendarStore, GOOGLE_CALENDAR_COLORS } from "./useCalendarStore";
 import { useAccountingStore } from "@/components/accounting/useAccountingStore";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, type TransactionType } from "@/components/accounting/types";
+import { useWarikanStore, calcSettlement } from "@/components/warikan/useWarikanStore";
+import Link from "next/link";
 
 // ── ユーティリティ ──────────────────────────────
 function parseTime(slot: string) {
@@ -166,6 +168,91 @@ function EventAccountingPanel({ calendarEntryId, entryLabel }: { calendarEntryId
                 </div>
               </form>
             </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── イベント別割り勘パネル ────────────────────────
+function EventWarikanPanel({ calendarEntryId, eventName, eventDate }: {
+  calendarEntryId: string; eventName: string; eventDate: string;
+}) {
+  const { sessionForCalendarEntry, createSession } = useWarikanStore();
+  const [open, setOpen] = useState(false);
+  const linked = sessionForCalendarEntry(calendarEntryId);
+  const total = linked ? linked.items.reduce((s, i) => s + i.amount, 0) : 0;
+  const { settlements } = linked ? calcSettlement(linked) : { settlements: [] };
+
+  const handleCreate = () => {
+    createSession({ name: eventName, date: eventDate, calendarEntryId });
+  };
+
+  return (
+    <div className="mt-1 border-t border-gray-100 dark:border-gray-700 pt-2">
+      <button onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors w-full">
+        <span>💸</span>
+        <span>割り勘</span>
+        {linked && total > 0 && (
+          <span className={`ml-auto font-semibold ${settlements.length === 0 ? "text-green-600 dark:text-green-400" : "text-indigo-600 dark:text-indigo-400"}`}>
+            {total.toLocaleString()}円 {settlements.length === 0 ? "✓精算済" : `(${settlements.length}件未精算)`}
+          </span>
+        )}
+        <span className="text-gray-300 dark:text-gray-600 ml-1">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          {!linked ? (
+            <button onClick={handleCreate}
+              className="w-full py-1.5 border border-dashed border-indigo-200 dark:border-indigo-800 rounded-lg text-xs text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+              ＋ このイベントの割り勘を作成
+            </button>
+          ) : (
+            <div className="space-y-2">
+              {/* サマリー */}
+              <div className="grid grid-cols-3 gap-1 text-center">
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg py-1.5">
+                  <p className="text-xs text-gray-400 dark:text-gray-500">合計</p>
+                  <p className="text-xs font-bold text-gray-700 dark:text-gray-200">{total.toLocaleString()}円</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg py-1.5">
+                  <p className="text-xs text-gray-400 dark:text-gray-500">人数</p>
+                  <p className="text-xs font-bold text-gray-700 dark:text-gray-200">{linked.participants.length}人</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg py-1.5">
+                  <p className="text-xs text-gray-400 dark:text-gray-500">未精算</p>
+                  <p className={`text-xs font-bold ${settlements.length === 0 ? "text-green-600 dark:text-green-400" : "text-indigo-600 dark:text-indigo-400"}`}>
+                    {settlements.length === 0 ? "なし" : `${settlements.length}件`}
+                  </p>
+                </div>
+              </div>
+
+              {/* 精算状況（未精算がある場合のみ） */}
+              {settlements.length > 0 && (
+                <div className="space-y-1">
+                  {settlements.map((st, i) => {
+                    const pname = (id: string) => linked.participants.find((p) => p.id === id)?.name ?? "?";
+                    return (
+                      <div key={i} className="flex items-center gap-1 px-2 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg text-xs">
+                        <span className="font-medium text-indigo-700 dark:text-indigo-300">{pname(st.from)}</span>
+                        <span className="text-gray-400">→</span>
+                        <span className="font-medium text-indigo-700 dark:text-indigo-300">{pname(st.to)}</span>
+                        <span className="ml-auto font-bold text-indigo-700 dark:text-indigo-300">{st.amount.toLocaleString()}円</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 割り勘ページへのリンク */}
+              <Link href="/warikan"
+                className="block w-full text-center py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                割り勘ページで詳細を編集 →
+              </Link>
+            </div>
           )}
         </div>
       )}
@@ -347,6 +434,12 @@ export default function CalendarApp() {
                         <EventAccountingPanel
                           calendarEntryId={e.id}
                           entryLabel={`${e.eventName} ${e.timeSlot}`}
+                        />
+                        {/* イベント別割り勘 */}
+                        <EventWarikanPanel
+                          calendarEntryId={e.id}
+                          eventName={e.eventName}
+                          eventDate={selectedDate!}
                         />
                       </div>
                     );
