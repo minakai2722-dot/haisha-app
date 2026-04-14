@@ -59,6 +59,7 @@ export function calcSettlement(session: WarikanSession): { balances: Record<stri
 
 export function useWarikanStore() {
   const [sessions, setSessions] = useLocalStorage<WarikanSession[]>("warikan_sessions", []);
+  const [selectedId, setSelectedId] = useLocalStorage<string | null>("warikan_selected_id", null);
 
   const createSession = (overrides?: Partial<WarikanSession>) => {
     const s: WarikanSession = {
@@ -79,10 +80,11 @@ export function useWarikanStore() {
 
   const deleteSession = (id: string) => {
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    setSelectedId((prev) => prev === id ? null : prev);
   };
 
   const sessionForCalendarEntry = (calendarEntryId: string) =>
     sessions.find((s) => s.calendarEntryId === calendarEntryId) ?? null;
 
-  return { sessions, createSession, updateSession, deleteSession, sessionForCalendarEntry };
+  return { sessions, selectedId, setSelectedId, createSession, updateSession, deleteSession, sessionForCalendarEntry };
 }
