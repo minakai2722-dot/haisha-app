@@ -18,7 +18,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body className={`${geist.className} bg-gray-50 dark:bg-gray-950`}>
+      <head>
+        {/* FOUCを防ぐため、React hydration前にダークモードクラスを適用 */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            try {
+              var theme = localStorage.getItem('theme');
+              if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+              }
+            } catch(e) {}
+          })();
+        `}} />
+      </head>
+      <body className={`${geist.className} bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100`}>
         <SessionWrapper>
           <Navbar />
           <main className="md:ml-56 pb-20 md:pb-0 pt-14 md:pt-0 min-h-screen">
