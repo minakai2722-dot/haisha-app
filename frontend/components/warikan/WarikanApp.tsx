@@ -1,7 +1,230 @@
 "use client";
 
 import { useState } from "react";
-import { useWarikanStore, calcSettlement, uuid, type WarikanSession } from "./useWarikanStore";
+import {
+  useWarikanStore, calcSettlement, uuid,
+  type WarikanSession, type Participant, type PayItem,
+} from "./useWarikanStore";
+
+// ── カラーパレット（メンバーチップ用） ────────────────
+const COLORS = [
+  { bg: "bg-rose-400",    light: "bg-rose-100 dark:bg-rose-900/40",    text: "text-rose-700 dark:text-rose-300" },
+  { bg: "bg-blue-500",    light: "bg-blue-100 dark:bg-blue-900/40",    text: "text-blue-700 dark:text-blue-300" },
+  { bg: "bg-emerald-500", light: "bg-emerald-100 dark:bg-emerald-900/40", text: "text-emerald-700 dark:text-emerald-300" },
+  { bg: "bg-amber-400",   light: "bg-amber-100 dark:bg-amber-900/40",  text: "text-amber-700 dark:text-amber-300" },
+  { bg: "bg-purple-500",  light: "bg-purple-100 dark:bg-purple-900/40", text: "text-purple-700 dark:text-purple-300" },
+  { bg: "bg-cyan-500",    light: "bg-cyan-100 dark:bg-cyan-900/40",    text: "text-cyan-700 dark:text-cyan-300" },
+  { bg: "bg-pink-400",    light: "bg-pink-100 dark:bg-pink-900/40",    text: "text-pink-700 dark:text-pink-300" },
+  { bg: "bg-indigo-500",  light: "bg-indigo-100 dark:bg-indigo-900/40", text: "text-indigo-700 dark:text-indigo-300" },
+];
+function colorOf(idx: number) { return COLORS[idx % COLORS.length]; }
+
+// ── メンバーチップ ────────────────────────────────
+function MemberChip({
+  name, index, size = "md", selected, onToggle, role,
+}: {
+  name: string; index: number; size?: "sm" | "md" | "lg";
+  selected?: boolean; onToggle?: () => void; role?: "payer" | "target";
+}) {
+  const c = colorOf(index);
+  const initial = name.slice(0, 1);
+  const sizeClass = size === "sm" ? "w-9 h-9 text-sm" : size === "lg" ? "w-14 h-14 text-xl" : "w-12 h-12 text-base";
+  const labelClass = size === "sm" ? "text-xs" : "text-xs";
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex flex-col items-center gap-1 transition-all ${onToggle ? "cursor-pointer" : "cursor-default"}`}
+    >
+      <div className={`${sizeClass} rounded-full flex items-center justify-center font-bold relative transition-all
+        ${selected
+          ? `${c.bg} text-white ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-800 ${role === "payer" ? "ring-yellow-400" : "ring-white"}`
+          : `${c.light} ${c.text}`
+        }`}>
+        {initial}
+        {selected && role === "payer" && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center text-xs">★</span>
+        )}
+        {selected && role === "target" && (
+          <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center text-xs border border-gray-200 dark:border-gray-600">✓</span>
+        )}
+      </div>
+      <span className={`${labelClass} text-gray-600 dark:text-gray-300 max-w-[48px] truncate leading-tight`}>{name}</span>
+    </button>
+  );
+}
+
+// ── 数字パッド ────────────────────────────────────
+function NumPad({ value, onChange, onConfirm }: {
+  value: string; onChange: (v: string) => void; onConfirm: () => void;
+}) {
+  const press = (key: string) => {
+    if (key === "C") { onChange(""); return; }
+    if (key === "⌫") { onChange(value.slice(0, -1)); return; }
+    if (key === "000") { if (value) onChange(value + "000"); return; }
+    if (value.length >= 8) return;
+    if (key === "0" && value === "") return;
+    onChange(value + key);
+  };
+
+  const display = value ? parseInt(value).toLocaleString("ja-JP") : "0";
+
+  return (
+    <div className="space-y-3">
+      {/* 表示エリア */}
+      <div className="bg-gray-50 dark:bg-gray-700/60 rounded-2xl px-5 py-4 text-right">
+        <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">¥</span>
+        <span className="text-3xl font-bold text-gray-800 dark:text-gray-100 tracking-tight">{display}</span>
+      </div>
+      {/* キーパッド */}
+      <div className="grid grid-cols-3 gap-2">
+        {["1","2","3","4","5","6","7","8","9","C","0","⌫"].map((k) => (
+          <button key={k} type="button" onClick={() => press(k)}
+            className={`py-3.5 rounded-xl text-lg font-semibold transition-all active:scale-95 ${
+              k === "C" ? "bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50"
+              : k === "⌫" ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+              : "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700 shadow-sm"
+            }`}>
+            {k}
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={onConfirm}
+        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-base rounded-xl transition-all active:scale-[.98]">
+        追加
+      </button>
+    </div>
+  );
+}
+
+// ── 支払い追加フォーム ─────────────────────────────
+function AddPaymentPanel({ participants, onAdd, onCancel }: {
+  participants: Participant[];
+  onAdd: (item: Omit<PayItem, "id">) => void;
+  onCancel: () => void;
+}) {
+  const [step, setStep] = useState<"payer" | "targets" | "amount">("payer");
+  const [payerId, setPayerId] = useState<string>("");
+  const [targets, setTargets] = useState<string[]>([]);
+  const [amount, setAmount] = useState("");
+  const [desc, setDesc] = useState("");
+
+  const toggleTarget = (id: string) => {
+    setTargets((prev) => prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]);
+  };
+  const allSelected = participants.every((p) => targets.includes(p.id));
+  const toggleAll = () => setTargets(allSelected ? [] : participants.map((p) => p.id));
+
+  const handleConfirm = () => {
+    const amt = parseInt(amount);
+    if (!payerId || isNaN(amt) || amt <= 0) return;
+    onAdd({ description: desc.trim() || "支払い", amount: amt, payerId, splitWith: targets });
+  };
+
+  const perPerson = (() => {
+    const amt = parseInt(amount);
+    const n = targets.length > 0 ? targets.length : participants.length;
+    return !isNaN(amt) && amt > 0 && n > 0 ? Math.ceil(amt / n) : null;
+  })();
+
+  const pname = (id: string) => participants.find((p) => p.id === id)?.name ?? "?";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-sm" onClick={onCancel}>
+      <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl p-5 space-y-5 pb-8"
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* ハンドル */}
+        <div className="w-10 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto" />
+
+        {/* ステップインジケーター */}
+        <div className="flex items-center gap-2 justify-center">
+          {(["payer","targets","amount"] as const).map((s, i) => (
+            <div key={s} className={`flex items-center gap-2`}>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                step === s ? "bg-indigo-600 text-white" :
+                (s === "payer" && payerId) || (s === "targets") || (s === "amount" && parseInt(amount) > 0)
+                  ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-400"
+              }`}>{i + 1}</div>
+              {i < 2 && <div className="w-8 h-0.5 bg-gray-100 dark:bg-gray-800" />}
+            </div>
+          ))}
+        </div>
+
+        {/* ── Step 1: 支払い人 ── */}
+        {step === "payer" && (
+          <div className="space-y-4">
+            <p className="text-base font-semibold text-gray-800 dark:text-gray-100 text-center">誰が支払いましたか？</p>
+            <div className="flex flex-wrap gap-4 justify-center py-2">
+              {participants.map((p, i) => (
+                <MemberChip key={p.id} name={p.name} index={i} size="lg"
+                  selected={payerId === p.id} role="payer"
+                  onToggle={() => { setPayerId(p.id); setStep("targets"); if (targets.length === 0) setTargets(participants.map((pp) => pp.id)); }} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 2: 対象者 ── */}
+        {step === "targets" && (
+          <div className="space-y-4">
+            <div className="text-center">
+              <p className="text-base font-semibold text-gray-800 dark:text-gray-100">誰が使いましたか？</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{pname(payerId)} が立替</p>
+            </div>
+            <div className="flex flex-wrap gap-4 justify-center py-2">
+              {participants.map((p, i) => (
+                <MemberChip key={p.id} name={p.name} index={i} size="lg"
+                  selected={targets.includes(p.id)} role="target"
+                  onToggle={() => toggleTarget(p.id)} />
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={toggleAll}
+                className="flex-1 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                {allSelected ? "全員解除" : "全員選択"}
+              </button>
+              <button type="button" onClick={() => setStep("amount")}
+                disabled={targets.length === 0}
+                className="flex-1 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 text-white font-semibold rounded-xl transition-colors">
+                次へ →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 3: 金額 ── */}
+        {step === "amount" && (
+          <div className="space-y-3">
+            <div className="text-center">
+              <p className="text-base font-semibold text-gray-800 dark:text-gray-100">金額を入力</p>
+              {perPerson && (
+                <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
+                  {targets.length > 0 ? targets.map(pname).join("・") : "全員"} で割り勘
+                  → {perPerson.toLocaleString()}円 / 人
+                </p>
+              )}
+            </div>
+            <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)}
+              placeholder="内容（例：居酒屋代）"
+              className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            <NumPad value={amount} onChange={setAmount} onConfirm={handleConfirm} />
+          </div>
+        )}
+
+        {/* 戻るボタン */}
+        {step !== "payer" && (
+          <button type="button" onClick={() => setStep(step === "amount" ? "targets" : "payer")}
+            className="w-full py-2 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            ← 戻る
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── セッション一覧 ─────────────────────────────
 function SessionList({ sessions, onSelect, onCreate, onDelete }: {
@@ -13,42 +236,52 @@ function SessionList({ sessions, onSelect, onCreate, onDelete }: {
   return (
     <div className="space-y-4">
       <button onClick={onCreate}
-        className="w-full py-2.5 border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-400 dark:text-gray-500 hover:border-indigo-300 hover:text-indigo-500 transition-colors">
+        className="w-full py-4 border-2 border-dashed border-indigo-200 dark:border-indigo-800 rounded-2xl text-sm font-medium text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
         ＋ 新しい割り勘を作成
       </button>
+
       {sessions.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-8 text-center text-gray-400 text-sm">
-          割り勘がありません
+        <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-10 text-center">
+          <p className="text-4xl mb-3">💸</p>
+          <p className="text-sm text-gray-400">割り勘がありません</p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
-          <ul className="divide-y divide-gray-50 dark:divide-gray-700">
-            {sessions.map((s) => {
-              const total = s.items.reduce((sum, i) => sum + i.amount, 0);
-              const { settlements } = calcSettlement(s);
-              return (
-                <li key={s.id} className="flex items-center px-5 py-3 gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 group transition-colors"
-                  onClick={() => onSelect(s)}>
-                  <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-lg flex-shrink-0">💸</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{s.name}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      {s.date} · {s.participants.length}人 · {s.items.length}件
-                      {s.calendarEntryId && <span className="ml-1 text-indigo-400">📅</span>}
-                    </p>
+        <div className="space-y-2">
+          {sessions.map((s) => {
+            const total = s.items.reduce((sum, i) => sum + i.amount, 0);
+            const { settlements } = calcSettlement(s);
+            const settled = s.items.length > 0 && settlements.length === 0;
+            return (
+              <div key={s.id}
+                className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-5 py-4 flex items-center gap-4 cursor-pointer hover:shadow-md transition-all group"
+                onClick={() => onSelect(s)}>
+                <div className="w-11 h-11 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-xl flex-shrink-0">💸</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{s.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-gray-400 dark:text-gray-500">{s.date}</p>
+                    <div className="flex -space-x-1">
+                      {s.participants.slice(0, 4).map((p, i) => (
+                        <div key={p.id} className={`w-5 h-5 rounded-full ${colorOf(i).bg} flex items-center justify-center text-white text-xs font-bold border border-white dark:border-gray-800`}>
+                          {p.name.slice(0, 1)}
+                        </div>
+                      ))}
+                      {s.participants.length > 4 && <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-500 border border-white dark:border-gray-800">+{s.participants.length - 4}</div>}
+                    </div>
+                    {s.calendarEntryId && <span className="text-indigo-400 text-xs">📅</span>}
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">{total.toLocaleString()}円</p>
-                    <p className={`text-xs ${settlements.length === 0 && s.items.length > 0 ? "text-green-500" : "text-gray-400 dark:text-gray-500"}`}>
-                      {s.items.length === 0 ? "未入力" : settlements.length === 0 ? "精算完了" : `${settlements.length}件未精算`}
-                    </p>
-                  </div>
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
-                    className="text-gray-200 dark:text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-lg leading-none ml-1">×</button>
-                </li>
-              );
-            })}
-          </ul>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-base font-bold text-gray-800 dark:text-gray-100">{total.toLocaleString()}円</p>
+                  <p className={`text-xs font-medium ${settled ? "text-green-500" : s.items.length === 0 ? "text-gray-400" : "text-indigo-500"}`}>
+                    {s.items.length === 0 ? "未入力" : settled ? "✓ 精算完了" : `${settlements.length}件未精算`}
+                  </p>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
+                  className="text-gray-200 dark:text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-xl leading-none ml-1">×</button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -62,212 +295,239 @@ function SessionDetail({ session, onUpdate, onBack }: {
   onBack: () => void;
 }) {
   const s = session;
-  const [newMemberName, setNewMemberName] = useState("");
-  const [itemForm, setItemForm] = useState({
-    description: "", amount: "",
-    payerId: s.participants[0]?.id ?? "",
-    splitWith: [] as string[],
-  });
   const [tab, setTab] = useState<"input" | "result">("input");
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [newMemberName, setNewMemberName] = useState("");
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [rounding, setRounding] = useState<"ceil" | "floor" | "round">("ceil");
 
   const update = (patch: Partial<WarikanSession>) => onUpdate({ ...s, ...patch });
 
   const addMember = () => {
     const name = newMemberName.trim();
     if (!name) return;
-    const newP = { id: uuid(), name };
-    const updated = { ...s, participants: [...s.participants, newP] };
-    update(updated);
-    setNewMemberName("");
-    if (!itemForm.payerId) setItemForm((f) => ({ ...f, payerId: newP.id }));
+    update({ participants: [...s.participants, { id: uuid(), name }] });
+    setNewMemberName(""); setShowAddMember(false);
   };
-
   const deleteMember = (id: string) => {
     update({
       participants: s.participants.filter((p) => p.id !== id),
-      items: s.items
-        .filter((i) => i.payerId !== id)
-        .map((i) => ({ ...i, splitWith: i.splitWith.filter((sid) => sid !== id) })),
+      items: s.items.filter((i) => i.payerId !== id).map((i) => ({ ...i, splitWith: i.splitWith.filter((sid) => sid !== id) })),
     });
   };
 
-  const addItem = () => {
-    const amount = parseInt(itemForm.amount);
-    if (!itemForm.description.trim() || isNaN(amount) || amount <= 0 || !itemForm.payerId) return;
-    update({ items: [...s.items, { id: uuid(), description: itemForm.description.trim(), amount, payerId: itemForm.payerId, splitWith: itemForm.splitWith }] });
-    setItemForm((f) => ({ ...f, description: "", amount: "", splitWith: [] }));
+  const addItem = (item: Omit<PayItem, "id">) => {
+    update({ items: [...s.items, { ...item, id: uuid() }] });
+    setShowAddPayment(false);
   };
-
   const deleteItem = (id: string) => update({ items: s.items.filter((i) => i.id !== id) });
 
-  const toggleSplit = (pid: string) => {
-    setItemForm((f) => ({
-      ...f,
-      splitWith: f.splitWith.includes(pid) ? f.splitWith.filter((id) => id !== pid) : [...f.splitWith, pid],
-    }));
-  };
-
   const pname = (id: string) => s.participants.find((p) => p.id === id)?.name ?? "?";
+  const pidx  = (id: string) => s.participants.findIndex((p) => p.id === id);
+
   const { settlements, balances } = calcSettlement(s);
   const totalAmount = s.items.reduce((sum, i) => sum + i.amount, 0);
 
+  const roundFn = rounding === "ceil" ? Math.ceil : rounding === "floor" ? Math.floor : Math.round;
+  const adjustedSettlements = settlements.map((st) => ({ ...st, amount: roundFn(st.amount) })).filter((st) => st.amount > 0);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-4">
+      {/* ヘッダー */}
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none">‹</button>
-        <div className="flex-1">
-          <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100">{s.name}</h2>
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            {s.date} · 合計 {totalAmount.toLocaleString()}円
-            {s.calendarEntryId && <span className="ml-1 text-indigo-400">📅カレンダー連携中</span>}
-          </p>
+        <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-lg">‹</button>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-gray-800 dark:text-gray-100 truncate">{s.name}</h2>
+          <p className="text-xs text-gray-400 dark:text-gray-500">{s.date} · {s.participants.length}人 · {totalAmount.toLocaleString()}円</p>
         </div>
       </div>
 
-      <div className="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1 gap-1">
-        {([["input","入力"],["result","精算結果"]] as const).map(([id, label]) => (
+      {/* メンバーチップ一覧 */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-5 py-4">
+        <div className="flex flex-wrap gap-3 items-center">
+          {s.participants.map((p, i) => (
+            <div key={p.id} className="flex flex-col items-center gap-1 group relative">
+              <div className={`w-11 h-11 rounded-full ${colorOf(i).bg} flex items-center justify-center text-white font-bold text-base`}>
+                {p.name.slice(0,1)}
+              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400 max-w-[44px] truncate">{p.name}</span>
+              <button onClick={() => deleteMember(p.id)}
+                className="absolute -top-1 -right-1 w-4 h-4 bg-red-400 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all leading-none">×</button>
+            </div>
+          ))}
+          {/* メンバー追加 */}
+          {showAddMember ? (
+            <div className="flex items-center gap-1">
+              <input type="text" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
+                onKeyDown={(e) => { if(e.key==="Enter") addMember(); if(e.key==="Escape"){ setShowAddMember(false); setNewMemberName(""); } }}
+                autoFocus placeholder="名前"
+                className="w-20 border border-indigo-300 dark:border-indigo-600 rounded-lg px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+              <button onClick={addMember} className="w-8 h-8 bg-indigo-600 rounded-lg text-white text-sm flex items-center justify-center">✓</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowAddMember(true)}
+              className="w-11 h-11 rounded-full border-2 border-dashed border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-300 dark:text-gray-600 hover:border-indigo-300 hover:text-indigo-400 transition-colors text-xl">
+              +
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* タブ */}
+      <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1 gap-1">
+        {([["input","支払い"],["result","精算結果"]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${tab === id ? "bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}>
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${tab===id ? "bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm" : "text-gray-400 dark:text-gray-500"}`}>
             {label}
+            {id === "result" && adjustedSettlements.length > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 bg-indigo-500 text-white rounded-full text-xs">{adjustedSettlements.length}</span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* 入力タブ */}
+      {/* ===== 支払いタブ ===== */}
       {tab === "input" && (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">参加者</h3>
-            <div className="flex flex-wrap gap-2">
-              {s.participants.map((p) => (
-                <span key={p.id} className="flex items-center gap-1 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm">
-                  {p.name}
-                  <button onClick={() => deleteMember(p.id)} className="text-indigo-300 hover:text-red-400 text-base leading-none ml-1">×</button>
-                </span>
-              ))}
+        <div className="space-y-3">
+          {s.items.length === 0 ? (
+            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-8 text-center">
+              <p className="text-3xl mb-2">🧾</p>
+              <p className="text-sm text-gray-400">支払いを追加してください</p>
             </div>
-            <div className="flex gap-2">
-              <input type="text" placeholder="名前を入力" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") addMember(); }}
-                className="flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-              <button onClick={addMember} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg">追加</button>
-            </div>
-          </div>
-
-          {s.items.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 px-4 py-3 border-b border-gray-100 dark:border-gray-700">支払い一覧</p>
-              <ul className="divide-y divide-gray-50 dark:divide-gray-700">
-                {s.items.map((item) => {
-                  const targets = item.splitWith.length > 0 ? item.splitWith.map(pname) : s.participants.map((p) => p.name);
-                  const perPerson = targets.length > 0 ? Math.ceil(item.amount / targets.length) : item.amount;
-                  return (
-                    <li key={item.id} className="flex items-center px-4 py-3 gap-3 group">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 dark:text-gray-100 truncate">{item.description}</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          {pname(item.payerId)}が立替 · {targets.join("・")}で割り勘
-                          <span className="ml-1 text-indigo-500 dark:text-indigo-400">({perPerson.toLocaleString()}円/人)</span>
-                        </p>
+          ) : (
+            <div className="space-y-2">
+              {s.items.map((item) => {
+                const targets = item.splitWith.length > 0 ? item.splitWith : s.participants.map((p) => p.id);
+                const perPerson = targets.length > 0 ? Math.ceil(item.amount / targets.length) : item.amount;
+                const payerIdx = pidx(item.payerId);
+                return (
+                  <div key={item.id} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-4 py-3 flex items-center gap-3 group">
+                    <div className={`w-10 h-10 rounded-full ${colorOf(payerIdx).bg} flex items-center justify-center text-white font-bold flex-shrink-0`}>
+                      {pname(item.payerId).slice(0,1)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{item.description}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <p className="text-xs text-gray-400 dark:text-gray-500">{pname(item.payerId)}が立替</p>
+                        <span className="text-gray-200 dark:text-gray-700">·</span>
+                        <div className="flex -space-x-1">
+                          {targets.slice(0,5).map((tid) => {
+                            const ti = pidx(tid);
+                            return <div key={tid} className={`w-4 h-4 rounded-full ${colorOf(ti).bg} border border-white dark:border-gray-800 flex items-center justify-center text-white text-xs`}>{pname(tid).slice(0,1)}</div>;
+                          })}
+                          {targets.length > 5 && <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-700 border border-white dark:border-gray-800 text-xs flex items-center justify-center text-gray-500">+{targets.length-5}</div>}
+                        </div>
+                        <span className="text-xs text-indigo-500 dark:text-indigo-400">{perPerson.toLocaleString()}円/人</span>
                       </div>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{item.amount.toLocaleString()}円</p>
-                      <button onClick={() => deleteItem(item.id)}
-                        className="text-gray-200 dark:text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-lg leading-none">×</button>
-                    </li>
-                  );
-                })}
-              </ul>
+                    </div>
+                    <p className="text-base font-bold text-gray-800 dark:text-gray-100 flex-shrink-0">{item.amount.toLocaleString()}円</p>
+                    <button onClick={() => deleteItem(item.id)}
+                      className="text-gray-200 dark:text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-xl leading-none ml-1">×</button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
-          {s.participants.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">支払いを追加</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">内容</label>
-                  <input type="text" placeholder="例：居酒屋代" value={itemForm.description} onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
-                    className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">金額（円）</label>
-                  <input type="number" min={1} placeholder="例：5000" value={itemForm.amount} onChange={(e) => setItemForm((f) => ({ ...f, amount: e.target.value }))}
-                    className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">支払った人</label>
-                <select value={itemForm.payerId} onChange={(e) => setItemForm((f) => ({ ...f, payerId: e.target.value }))}
-                  className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                  {s.participants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">割り勘対象（未選択 = 全員）</label>
-                <div className="flex flex-wrap gap-2">
-                  {s.participants.map((p) => (
-                    <button key={p.id} type="button" onClick={() => toggleSplit(p.id)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${itemForm.splitWith.includes(p.id) ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"}`}>
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-                {itemForm.splitWith.length === 0 && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">→ 全員（{s.participants.length}人）で割り勘</p>
-                )}
-              </div>
-              <button onClick={addItem} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg">追加</button>
-            </div>
+          {s.participants.length >= 2 && (
+            <button onClick={() => setShowAddPayment(true)}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-sm rounded-2xl transition-all active:scale-[.98]">
+              ＋ 支払いを追加
+            </button>
+          )}
+          {s.participants.length < 2 && (
+            <p className="text-center text-xs text-gray-400 dark:text-gray-500">参加者を2人以上追加してください</p>
           )}
         </div>
       )}
 
-      {/* 精算結果タブ */}
+      {/* ===== 精算結果タブ ===== */}
       {tab === "result" && (
         <div className="space-y-4">
-          {s.participants.length === 0 || s.items.length === 0 ? (
-            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-8 text-center text-gray-400 text-sm">
-              参加者と支払いを入力してください
+          {s.items.length === 0 ? (
+            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-8 text-center">
+              <p className="text-3xl mb-2">🔢</p>
+              <p className="text-sm text-gray-400">支払いを入力してください</p>
             </div>
           ) : (
             <>
-              <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">合計</p>
-                  <p className="text-lg font-bold text-gray-800 dark:text-gray-100">{totalAmount.toLocaleString()}円</p>
+              {/* 端数設定 */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-4 py-3 flex items-center gap-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 flex-1">端数</p>
+                <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-0.5 gap-0.5">
+                  {([["ceil","切り上げ"],["round","四捨五入"],["floor","切り捨て"]] as const).map(([v,label]) => (
+                    <button key={v} onClick={() => setRounding(v)}
+                      className={`px-2.5 py-1 text-xs rounded-lg transition-all ${rounding===v ? "bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 font-semibold shadow-sm" : "text-gray-400 dark:text-gray-500"}`}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {s.participants.map((p) => {
-                    const bal = balances[p.id] ?? 0;
-                    return (
-                      <div key={p.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                        <span className="text-sm text-gray-700 dark:text-gray-200">{p.name}</span>
-                        <span className={`text-sm font-semibold ${bal > 0.5 ? "text-green-600 dark:text-green-400" : bal < -0.5 ? "text-red-500 dark:text-red-400" : "text-gray-400"}`}>
-                          {bal > 0.5 ? `+${Math.round(bal).toLocaleString()}` : Math.round(bal).toLocaleString()}円
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">+ = 受け取り / − = 支払い</p>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 space-y-2">
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">精算方法</p>
-                {settlements.length === 0 ? (
-                  <p className="text-sm text-green-600 dark:text-green-400 text-center py-4">全員精算済みです！</p>
-                ) : settlements.map((st, i) => (
-                  <div key={i} className="flex items-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
-                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">{pname(st.from)}</span>
-                    <span className="text-gray-400 text-xs">→</span>
-                    <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">{pname(st.to)}</span>
-                    <span className="ml-auto text-sm font-bold text-indigo-700 dark:text-indigo-300">{st.amount.toLocaleString()}円</span>
+              {/* 各自の収支 */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-4 space-y-2">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">立替状況</p>
+                {s.participants.map((p, i) => {
+                  const bal = balances[p.id] ?? 0;
+                  return (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full ${colorOf(i).bg} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+                        {p.name.slice(0,1)}
+                      </div>
+                      <span className="flex-1 text-sm text-gray-700 dark:text-gray-200">{p.name}</span>
+                      <div className="text-right">
+                        <span className={`text-sm font-bold ${bal > 0.5 ? "text-green-600 dark:text-green-400" : bal < -0.5 ? "text-red-500 dark:text-red-400" : "text-gray-400"}`}>
+                          {bal > 0.5 ? `+${roundFn(bal).toLocaleString()}` : roundFn(bal).toLocaleString()}円
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 精算方法 */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 px-1">精算方法</p>
+                {adjustedSettlements.length === 0 ? (
+                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-6 text-center">
+                    <p className="text-2xl mb-1">✅</p>
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-400">全員精算済みです！</p>
                   </div>
-                ))}
+                ) : adjustedSettlements.map((st, i) => {
+                  const fromIdx = pidx(st.from);
+                  const toIdx   = pidx(st.to);
+                  return (
+                    <div key={i} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-5 py-4 flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full ${colorOf(fromIdx).bg} flex items-center justify-center text-white font-bold flex-shrink-0`}>
+                        {pname(st.from).slice(0,1)}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                          <span>{pname(st.from)}</span>
+                          <span className="text-gray-300 dark:text-gray-600 mx-2">→</span>
+                          <span>{pname(st.to)}</span>
+                        </p>
+                      </div>
+                      <div className={`w-10 h-10 rounded-full ${colorOf(toIdx).bg} flex items-center justify-center text-white font-bold flex-shrink-0`}>
+                        {pname(st.to).slice(0,1)}
+                      </div>
+                      <p className="text-lg font-bold text-gray-800 dark:text-gray-100 ml-2">{st.amount.toLocaleString()}円</p>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
         </div>
+      )}
+
+      {/* 支払い追加モーダル */}
+      {showAddPayment && (
+        <AddPaymentPanel
+          participants={s.participants}
+          onAdd={addItem}
+          onCancel={() => setShowAddPayment(false)}
+        />
       )}
     </div>
   );
@@ -276,14 +536,8 @@ function SessionDetail({ session, onUpdate, onBack }: {
 // ── メインコンポーネント ─────────────────────────
 export default function WarikanApp({ initialSessionId }: { initialSessionId?: string } = {}) {
   const { sessions, createSession, updateSession, deleteSession } = useWarikanStore();
-  const [selected, setSelected] = useState<WarikanSession | null>(() => {
-    if (initialSessionId) return null; // will be set after sessions load
-    return null;
-  });
-
-  // initialSessionId が指定された場合、対応するセッションを選択
-  const targetSession = initialSessionId ? sessions.find((s) => s.id === initialSessionId) ?? null : null;
-  const displaySession = selected ?? targetSession;
+  const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
+  const selected = sessions.find((s) => s.id === selectedId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -292,17 +546,17 @@ export default function WarikanApp({ initialSessionId }: { initialSessionId?: st
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">支払いを記録して精算金額を計算します</p>
       </div>
 
-      {displaySession ? (
+      {selected ? (
         <SessionDetail
-          session={sessions.find((s) => s.id === displaySession.id) ?? displaySession}
+          session={selected}
           onUpdate={updateSession}
-          onBack={() => setSelected(null)}
+          onBack={() => setSelectedId(null)}
         />
       ) : (
         <SessionList
           sessions={sessions}
-          onSelect={setSelected}
-          onCreate={() => { const s = createSession(); setSelected(s); }}
+          onSelect={(s) => setSelectedId(s.id)}
+          onCreate={() => { const s = createSession(); setSelectedId(s.id); }}
           onDelete={deleteSession}
         />
       )}
