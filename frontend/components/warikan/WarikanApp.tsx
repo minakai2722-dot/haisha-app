@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import {
-  useWarikanStore, calcSettlement, uuid,
+  useWarikanStore, calcSettlement, uuid, todayStr,
   type WarikanSession, type Participant, type PayItem,
 } from "./useWarikanStore";
+import { useCalendarStore } from "@/components/calendar/useCalendarStore";
 
 // ── カラーパレット（メンバーチップ用） ────────────────
 const COLORS = [
@@ -226,19 +227,124 @@ function AddPaymentPanel({ participants, onAdd, onCancel }: {
   );
 }
 
+// ── 新規作成フォーム ─────────────────────────────
+function CreateSessionForm({ eventNames, timeSlots, onSubmit, onCancel }: {
+  eventNames: string[];
+  timeSlots: string[];
+  onSubmit: (name: string, date: string, timeSlot: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(eventNames[0] ?? "");
+  const [customName, setCustomName] = useState("");
+  const [useCustom, setUseCustom] = useState(eventNames.length === 0);
+  const [date, setDate] = useState(todayStr());
+  const [timeSlot, setTimeSlot] = useState(timeSlots[0] ?? "");
+
+  const resolvedName = useCustom ? customName.trim() : name;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvedName || !date) return;
+    onSubmit(resolvedName, date, timeSlot);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 backdrop-blur-sm" onClick={onCancel}>
+      <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-t-3xl p-5 space-y-4 pb-8"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto" />
+        <p className="text-base font-bold text-gray-800 dark:text-gray-100 text-center">新しい割り勘</p>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {/* イベント名 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">イベント名</label>
+            {!useCustom && eventNames.length > 0 ? (
+              <div className="flex gap-2">
+                <select value={name} onChange={(e) => setName(e.target.value)}
+                  className="flex-1 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                  {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <button type="button" onClick={() => setUseCustom(true)}
+                  className="px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-xl text-gray-400 hover:text-indigo-500 hover:border-indigo-300 transition-colors">
+                  その他
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input type="text" value={customName} onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="イベント名を入力"
+                  className="flex-1 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                {eventNames.length > 0 && (
+                  <button type="button" onClick={() => { setUseCustom(false); setCustomName(""); }}
+                    className="px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-xl text-gray-400 hover:text-indigo-500 hover:border-indigo-300 transition-colors">
+                    一覧
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 日付 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">日付</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+
+          {/* 時間帯 */}
+          {timeSlots.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">時間帯（任意）</label>
+              <select value={timeSlot} onChange={(e) => setTimeSlot(e.target.value)}
+                className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <option value="">指定なし</option>
+                {timeSlots.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          )}
+
+          <button type="submit" disabled={!resolvedName || !date}
+            className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 text-white font-bold text-sm rounded-xl transition-all">
+            作成
+          </button>
+        </form>
+
+        <button type="button" onClick={onCancel}
+          className="w-full py-2 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── セッション一覧 ─────────────────────────────
-function SessionList({ sessions, onSelect, onCreate, onDelete }: {
+function SessionList({ sessions, eventNames, timeSlots, onSelect, onCreate, onDelete }: {
   sessions: WarikanSession[];
+  eventNames: string[];
+  timeSlots: string[];
   onSelect: (s: WarikanSession) => void;
-  onCreate: () => void;
+  onCreate: (name: string, date: string, timeSlot: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [showForm, setShowForm] = useState(false);
+
   return (
     <div className="space-y-4">
-      <button onClick={onCreate}
+      <button onClick={() => setShowForm(true)}
         className="w-full py-4 border-2 border-dashed border-indigo-200 dark:border-indigo-800 rounded-2xl text-sm font-medium text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
         ＋ 新しい割り勘を作成
       </button>
+
+      {showForm && (
+        <CreateSessionForm
+          eventNames={eventNames}
+          timeSlots={timeSlots}
+          onSubmit={(name, date, timeSlot) => { onCreate(name, date, timeSlot); setShowForm(false); }}
+          onCancel={() => setShowForm(false)}
+        />
+      )}
 
       {sessions.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-10 text-center">
@@ -536,8 +642,15 @@ function SessionDetail({ session, onUpdate, onBack }: {
 // ── メインコンポーネント ─────────────────────────
 export default function WarikanApp({ initialSessionId }: { initialSessionId?: string } = {}) {
   const { sessions, createSession, updateSession, deleteSession } = useWarikanStore();
+  const { eventNames, timeSlots, addEntry } = useCalendarStore();
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
   const selected = sessions.find((s) => s.id === selectedId) ?? null;
+
+  const handleCreate = (name: string, date: string, timeSlot: string) => {
+    const calendarEntryId = addEntry({ date, eventName: name, timeSlot: timeSlot || "未設定", colorId: "7" });
+    const s = createSession({ name, date, calendarEntryId });
+    setSelectedId(s.id);
+  };
 
   return (
     <div className="space-y-4">
@@ -555,8 +668,10 @@ export default function WarikanApp({ initialSessionId }: { initialSessionId?: st
       ) : (
         <SessionList
           sessions={sessions}
+          eventNames={eventNames}
+          timeSlots={timeSlots}
           onSelect={(s) => setSelectedId(s.id)}
-          onCreate={() => { const s = createSession(); setSelectedId(s.id); }}
+          onCreate={handleCreate}
           onDelete={deleteSession}
         />
       )}

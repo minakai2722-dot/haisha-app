@@ -86,8 +86,10 @@ export function useCalendarStore() {
     setTimeSlots((prev) => prev.filter((s) => s !== slot));
   };
 
-  const addEntry = (entry: Omit<CalendarEntry, "id">) => {
-    setEntries((prev) => [...prev, { ...entry, id: crypto.randomUUID() }]);
+  const addEntry = (entry: Omit<CalendarEntry, "id">): string => {
+    const id = crypto.randomUUID();
+    setEntries((prev) => [...prev, { ...entry, id }]);
+    return id;
   };
   const deleteEntry = (id: string) => {
     setEntries((prev) => prev.filter((e) => e.id !== id));
