@@ -1,5 +1,5 @@
-import AccountingApp from "@/components/accounting/AccountingApp";
+import AccountingGate from "@/components/accounting/AccountingGate";
 
 export default function AccountingPage() {
-  return <AccountingApp />;
+  return <AccountingGate />;
 }
