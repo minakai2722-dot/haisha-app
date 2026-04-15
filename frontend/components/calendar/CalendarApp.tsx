@@ -25,6 +25,27 @@ type Tab = "calendar" | "settings";
 type Status = { type: "success"|"error"; message: string } | null;
 const AUTH_KEY = "accounting_authed";
 
+// ── 削除確認ダイアログ ─────────────────────────────
+function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mx-4 w-full max-w-sm space-y-4">
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-100 text-center">{message}</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+            キャンセル
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors">
+            削除する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── インライン追加プルダウン ───────────────────────
 function AddableSelect({ value, options, placeholder, onChange, onAdd }: {
   value: string; options: string[]; placeholder?: string;
@@ -276,6 +297,7 @@ export default function CalendarApp() {
   const [status, setStatus]   = useState<Status>(null);
   const [newEventName, setNewEventName] = useState("");
   const [newTimeSlot, setNewTimeSlot]   = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const safeEventName = eventNames.includes(form.eventName) ? form.eventName : (eventNames[0] ?? "");
   const safeTimeSlot  = timeSlots.includes(form.timeSlot)   ? form.timeSlot  : (timeSlots[0]  ?? "");
@@ -309,21 +331,45 @@ export default function CalendarApp() {
           }),
         });
         if (!res.ok) { const e=await res.json(); throw new Error(e.error?.message ?? "APIエラー"); }
+        const gcalEvent = await res.json();
+        addEntry({ ...entry, gcalEventId: gcalEvent.id });
         setStatus({ type:"success", message:`Googleカレンダーに追加：${safeEventName} (${safeTimeSlot})` });
+        setLoading(false); return;
       } catch(e: unknown) {
         setStatus({ type:"error", message:`失敗：${e instanceof Error ? e.message : String(e)}` });
         setLoading(false); return;
       }
-      setLoading(false);
     } else {
       setStatus({ type:"success", message:`追加：${safeEventName} (${safeTimeSlot})` });
     }
     addEntry(entry);
   };
 
+  const handleDeleteEntry = async (id: string) => {
+    const entry = store.entries.find((e) => e.id === id);
+    if (entry?.gcalEventId && session?.access_token) {
+      try {
+        await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${entry.gcalEventId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      } catch { /* 削除失敗でもローカルは消す */ }
+    }
+    deleteEntry(id);
+    setPendingDeleteId(null);
+  };
+
   const selectedEntries = selectedDate ? entriesForDate(selectedDate) : [];
 
   return (
+    <>
+    {pendingDeleteId && (
+      <ConfirmDialog
+        message={`このイベントを削除しますか？${session?.access_token ? " Googleカレンダーからも削除されます。" : ""}`}
+        onConfirm={() => handleDeleteEntry(pendingDeleteId)}
+        onCancel={() => setPendingDeleteId(null)}
+      />
+    )}
     <div className="space-y-4">
       {/* ヘッダー */}
       <div className="flex items-center justify-between">
@@ -427,8 +473,8 @@ export default function CalendarApp() {
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color?.hex ?? "#9ca3af" }} />
                           <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-100">{e.eventName}</span>
                           <span className="text-xs text-gray-400 dark:text-gray-500">{e.timeSlot}</span>
-                          <button onClick={() => deleteEntry(e.id)}
-                            className="text-gray-200 dark:text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-base leading-none ml-1">×</button>
+                          <button onClick={() => setPendingDeleteId(e.id)}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 dark:text-gray-600 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all text-base ml-1">×</button>
                         </div>
                         {/* イベント別収支（Adminのみ） */}
                         <EventAccountingPanel
@@ -533,5 +579,6 @@ export default function CalendarApp() {
         </div>
       )}
     </div>
+    </>
   );
 }

@@ -28,17 +28,18 @@ export const DEFAULT_TIME_SLOTS = [
   "19:00~21:00",
 ];
 
+// Google Calendar API の公式 colorId マッピング（ずれると送信時に色が変わるため厳密に合わせる）
 export const GOOGLE_CALENDAR_COLORS: { id: string; name: string; hex: string }[] = [
-  { id: "1",  name: "トマト",      hex: "#D50000" },
-  { id: "2",  name: "フラミンゴ",   hex: "#E67C73" },
-  { id: "3",  name: "タンジェリン", hex: "#F4511E" },
-  { id: "4",  name: "バナナ",      hex: "#F6BF26" },
-  { id: "5",  name: "セージ",      hex: "#33B679" },
-  { id: "6",  name: "バジル",      hex: "#0B8043" },
+  { id: "1",  name: "ラベンダー",   hex: "#7986CB" },
+  { id: "2",  name: "セージ",      hex: "#33B679" },
+  { id: "3",  name: "グレープ",    hex: "#8E24AA" },
+  { id: "4",  name: "フラミンゴ",   hex: "#E67C73" },
+  { id: "5",  name: "バナナ",      hex: "#F6BF26" },
+  { id: "6",  name: "タンジェリン", hex: "#F4511E" },
   { id: "7",  name: "ピーコック",   hex: "#039BE5" },
   { id: "8",  name: "ブルーベリー", hex: "#3F51B5" },
-  { id: "9",  name: "ラベンダー",   hex: "#7986CB" },
-  { id: "10", name: "グレープ",    hex: "#8E24AA" },
+  { id: "9",  name: "バジル",      hex: "#0B8043" },
+  { id: "10", name: "トマト",      hex: "#D50000" },
   { id: "11", name: "グラファイト", hex: "#616161" },
 ];
 
@@ -48,6 +49,7 @@ export interface CalendarEntry {
   eventName: string;
   timeSlot: string;
   colorId: string;
+  gcalEventId?: string; // Google Calendar イベントID（削除連携用）
 }
 
 export function useCalendarStore() {
