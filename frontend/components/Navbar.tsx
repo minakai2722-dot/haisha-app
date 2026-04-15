@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
 
 const navItems = [
-  { href: "/",           label: "ホーム",     icon: "🏠" },
   { href: "/haisha",     label: "配車",       icon: "🚗" },
   { href: "/accounting", label: "会計",       icon: "💴" },
   { href: "/calendar",   label: "カレンダー", icon: "📅" },
@@ -56,18 +55,6 @@ export default function Navbar() {
           <GoogleLoginButton />
         </div>
 
-        {/* 戻るボタン（サブページのみ） */}
-        {!isHome && (
-          <div className="px-3 mb-2">
-            <button
-              onClick={() => router.back()}
-              className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
-              <span className="text-base leading-none">←</span>
-              戻る
-            </button>
-          </div>
-        )}
-
         <nav className="flex flex-col gap-1 flex-1">
           {navItems.map((item) => {
             const active = pathname === item.href;
@@ -107,13 +94,6 @@ export default function Navbar() {
               </svg>
               戻る
             </button>
-          )}
-
-          {/* 中央：サブページのみページ名 */}
-          {!isHome && (
-            <p className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold text-gray-800 dark:text-gray-100 pointer-events-none">
-              {pageTitle}
-            </p>
           )}
 
           {/* 右側：ダークモード + ログイン */}
