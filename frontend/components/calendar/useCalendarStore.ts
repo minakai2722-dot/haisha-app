@@ -28,19 +28,21 @@ export const DEFAULT_TIME_SLOTS = [
   "19:00~21:00",
 ];
 
-// Google Calendar API の colors.get エンドポイントが返す background 色に合わせた値
+// Google Calendar API の colorId は名前順ではなく固定の番号割り当て
+// 1=Tomato, 2=Flamingo, 3=Tangerine, 4=Banana, 5=Sage, 6=Basil,
+// 7=Peacock, 8=Blueberry, 9=Lavender, 10=Grape, 11=Graphite
 export const GOOGLE_CALENDAR_COLORS: { id: string; name: string; hex: string }[] = [
-  { id: "1",  name: "ラベンダー",   hex: "#a4bdfc" },
-  { id: "2",  name: "セージ",      hex: "#51b749" },
-  { id: "3",  name: "グレープ",    hex: "#dbadff" },
-  { id: "4",  name: "フラミンゴ",   hex: "#ff887c" },
-  { id: "5",  name: "バナナ",      hex: "#fbd75b" },
-  { id: "6",  name: "タンジェリン", hex: "#ffb878" },
-  { id: "7",  name: "ピーコック",   hex: "#46d6db" },
-  { id: "8",  name: "ブルーベリー", hex: "#5484ed" },
-  { id: "9",  name: "バジル",      hex: "#61bd86" },
-  { id: "10", name: "トマト",      hex: "#dc2127" },
-  { id: "11", name: "グラファイト", hex: "#e1e1e1" },
+  { id: "1",  name: "トマト",      hex: "#D50000" },
+  { id: "2",  name: "フラミンゴ",   hex: "#E67C73" },
+  { id: "3",  name: "タンジェリン", hex: "#F4511E" },
+  { id: "4",  name: "バナナ",      hex: "#F6BF26" },
+  { id: "5",  name: "セージ",      hex: "#33B679" },
+  { id: "6",  name: "バジル",      hex: "#0B8043" },
+  { id: "7",  name: "ピーコック",   hex: "#039BE5" },
+  { id: "8",  name: "ブルーベリー", hex: "#3F51B5" },
+  { id: "9",  name: "ラベンダー",   hex: "#7986CB" },
+  { id: "10", name: "グレープ",    hex: "#8E24AA" },
+  { id: "11", name: "グラファイト", hex: "#616161" },
 ];
 
 export interface CalendarEntry {
