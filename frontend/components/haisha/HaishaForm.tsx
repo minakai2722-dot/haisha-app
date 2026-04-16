@@ -90,6 +90,60 @@ function StepBadge({ n }: { n: number }) {
   );
 }
 
+type MemberCardProps = {
+  m: Member;
+  errors: Errors;
+  inputClass: (key: string) => string;
+  updateMember: (id: string, field: keyof Member, value: string | boolean | number) => void;
+  removeMember: (id: string) => void;
+};
+
+function MemberCard({ m, errors, inputClass, updateMember, removeMember }: MemberCardProps) {
+  return (
+    <div className={`border rounded-xl p-3 transition-all duration-200 animate-slide-up ${
+      m.can_drive ? "border-l-4 border-l-blue-400 border-gray-100 dark:border-gray-700" : "border-l-4 border-l-green-400 border-gray-100 dark:border-gray-700"
+    }`}>
+      <div className="flex items-center justify-end mb-2">
+        <button onClick={() => removeMember(m.id)} className="text-xs text-gray-300 hover:text-red-400 transition-colors">✕</button>
+      </div>
+      <div className={`grid gap-2 mb-2 ${m.can_drive ? "grid-cols-3" : "grid-cols-2"}`}>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">名前 *</label>
+          <input type="text" value={m.name} onChange={(e) => updateMember(m.id, "name", e.target.value)} placeholder="田中" className={inputClass(`${m.id}-name`)} />
+          {errors[`${m.id}-name`] && <p className="text-xs text-red-500 mt-0.5">{errors[`${m.id}-name`]}</p>}
+        </div>
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">最寄り駅 *</label>
+          <input type="text" value={m.station} onChange={(e) => updateMember(m.id, "station", e.target.value)} placeholder="新宿" className={inputClass(`${m.id}-station`)} />
+          {errors[`${m.id}-station`] && <p className="text-xs text-red-500 mt-0.5">{errors[`${m.id}-station`]}</p>}
+        </div>
+        {m.can_drive && (
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">定員</label>
+            <input type="number" value={m.capacity} min={2} onChange={(e) => updateMember(m.id, "capacity", parseInt(e.target.value))} className={inputClass(`${m.id}-capacity`)} />
+            {errors[`${m.id}-capacity`] && <p className="text-xs text-red-500 mt-0.5">{errors[`${m.id}-capacity`]}</p>}
+          </div>
+        )}
+      </div>
+      <details className="mt-1">
+        <summary className="text-xs text-gray-400 cursor-pointer select-none">人間関係（任意）</summary>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          {[
+            { label: "一緒になりたい人", field: "want_with" as keyof Member, placeholder: "山田, 鈴木" },
+            { label: "気まずい人", field: "awkward_with" as keyof Member, placeholder: "佐藤" },
+          ].map(({ label, field, placeholder }) => (
+            <div key={field as string}>
+              <label className="text-xs text-gray-400 block mb-1">{label}</label>
+              <input type="text" value={m[field] as string} onChange={(e) => updateMember(m.id, field, e.target.value)} placeholder={placeholder}
+                className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
+            </div>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function parseCsv(text: string): CsvRow[] {
   const lines = text.trim().split("\n");
   if (lines.length < 2) return [];
@@ -148,7 +202,7 @@ export default function HaishaForm() {
     try { localStorage.setItem(ARRIVAL_KEY, targetArrival); } catch {}
   }, [targetArrival]);
 
-  const addMember = (isDriver: boolean) => setMembers((prev) => [...prev, createMember(isDriver)]);
+  const addMember = (isDriver: boolean) => setMembers((prev) => [createMember(isDriver), ...prev]);
   const removeMember = (id: string) => {
     setMembers((prev) => prev.filter((m) => m.id !== id));
     setErrors((prev) => { const next = { ...prev }; delete next[`${id}-name`]; delete next[`${id}-station`]; return next; });
@@ -488,54 +542,37 @@ export default function HaishaForm() {
             </button>
           </div>
         </div>
-        <div className="space-y-3">
-          {members.map((m) => (
-            <div key={m.id}
-              className={`border rounded-xl p-3 transition-all duration-200 animate-slide-up ${
-                m.can_drive ? "border-l-4 border-l-blue-400 border-gray-100 dark:border-gray-700" : "border-l-4 border-l-green-400 border-gray-100 dark:border-gray-700"
-              }`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${
-                  m.can_drive ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" : "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-                }`}>{m.can_drive ? "🚗 運転手" : "👤 乗客"}</span>
-                <button onClick={() => removeMember(m.id)} className="text-xs text-gray-300 hover:text-red-400 transition-colors">✕</button>
-              </div>
-              <div className={`grid gap-2 mb-2 ${m.can_drive ? "grid-cols-3" : "grid-cols-2"}`}>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">名前 *</label>
-                  <input type="text" value={m.name} onChange={(e) => updateMember(m.id, "name", e.target.value)} placeholder="田中" className={inputClass(`${m.id}-name`)} />
-                  {errors[`${m.id}-name`] && <p className="text-xs text-red-500 mt-0.5">{errors[`${m.id}-name`]}</p>}
-                </div>
-                <div>
-                  <label className="text-xs text-gray-400 block mb-1">最寄り駅 *</label>
-                  <input type="text" value={m.station} onChange={(e) => updateMember(m.id, "station", e.target.value)} placeholder="新宿" className={inputClass(`${m.id}-station`)} />
-                  {errors[`${m.id}-station`] && <p className="text-xs text-red-500 mt-0.5">{errors[`${m.id}-station`]}</p>}
-                </div>
-                {m.can_drive && (
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">定員</label>
-                    <input type="number" value={m.capacity} min={2} onChange={(e) => updateMember(m.id, "capacity", parseInt(e.target.value))} className={inputClass(`${m.id}-capacity`)} />
-                    {errors[`${m.id}-capacity`] && <p className="text-xs text-red-500 mt-0.5">{errors[`${m.id}-capacity`]}</p>}
-                  </div>
-                )}
-              </div>
-              <details className="mt-1">
-                <summary className="text-xs text-gray-400 cursor-pointer select-none">人間関係（任意）</summary>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  {[
-                    { label: "一緒になりたい人", field: "want_with" as keyof Member, placeholder: "山田, 鈴木" },
-                    { label: "気まずい人", field: "awkward_with" as keyof Member, placeholder: "佐藤" },
-                  ].map(({ label, field, placeholder }) => (
-                    <div key={field as string}>
-                      <label className="text-xs text-gray-400 block mb-1">{label}</label>
-                      <input type="text" value={m[field] as string} onChange={(e) => updateMember(m.id, field, e.target.value)} placeholder={placeholder}
-                        className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
-                    </div>
-                  ))}
-                </div>
-              </details>
+        <div className="space-y-4">
+          {/* 運転手セクション */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">🚗 運転手</span>
+              <span className="text-xs text-gray-400">({drivers.length}名)</span>
             </div>
-          ))}
+            <div className="space-y-3">
+              {drivers.map((m) => (
+                <MemberCard key={m.id} m={m} errors={errors} inputClass={inputClass} updateMember={updateMember} removeMember={removeMember} />
+              ))}
+              {drivers.length === 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-2 border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">運転手を追加してください</p>
+              )}
+            </div>
+          </div>
+          {/* 乗客セクション */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-green-600 dark:text-green-400">👤 乗客</span>
+              <span className="text-xs text-gray-400">({passengers.length}名)</span>
+            </div>
+            <div className="space-y-3">
+              {passengers.map((m) => (
+                <MemberCard key={m.id} m={m} errors={errors} inputClass={inputClass} updateMember={updateMember} removeMember={removeMember} />
+              ))}
+              {passengers.length === 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-2 border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">乗客を追加してください</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
