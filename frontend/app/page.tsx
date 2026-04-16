@@ -23,26 +23,6 @@ const MENU_ITEMS = [
     border: "border-emerald-100 dark:border-emerald-800",
     iconBg: "bg-emerald-100 dark:bg-emerald-900/40",
   },
-  {
-    href: "/calendar",
-    icon: "📅",
-    label: "カレンダー",
-    description: "活動スケジュールを管理",
-    color: "from-violet-500 to-violet-600",
-    bg: "bg-violet-50 dark:bg-violet-900/20",
-    border: "border-violet-100 dark:border-violet-800",
-    iconBg: "bg-violet-100 dark:bg-violet-900/40",
-  },
-  {
-    href: "/warikan",
-    icon: "💸",
-    label: "割り勘",
-    description: "支払いを記録して精算",
-    color: "from-rose-500 to-rose-600",
-    bg: "bg-rose-50 dark:bg-rose-900/20",
-    border: "border-rose-100 dark:border-rose-800",
-    iconBg: "bg-rose-100 dark:bg-rose-900/40",
-  },
 ];
 
 export default function HomePage() {
