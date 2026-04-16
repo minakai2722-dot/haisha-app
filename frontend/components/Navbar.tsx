@@ -7,8 +7,6 @@ import GoogleLoginButton from "@/components/GoogleLoginButton";
 const navItems = [
   { href: "/haisha",     label: "配車",       icon: "🚗" },
   { href: "/accounting", label: "会計",       icon: "💴" },
-  { href: "/calendar",   label: "カレンダー", icon: "📅" },
-  { href: "/warikan",    label: "割り勘",     icon: "💸" },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
