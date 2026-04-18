@@ -4,9 +4,26 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
 
+const CarIcon = ({ className }: { className: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 17H3a1 1 0 01-1-1v-4l2.5-5h11l2.5 5v4a1 1 0 01-1 1h-2" />
+    <circle cx="7.5" cy="17" r="1.5" />
+    <circle cx="16.5" cy="17" r="1.5" />
+    <path d="M7.5 15.5h9" />
+  </svg>
+);
+
+const WalletIcon = ({ className }: { className: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <path d="M2 10h20" />
+    <path d="M16 14h2" />
+  </svg>
+);
+
 const navItems = [
-  { href: "/haisha",     label: "配車",       icon: "🚗" },
-  { href: "/accounting", label: "会計",       icon: "💴" },
+  { href: "/haisha",     label: "配車", Icon: CarIcon },
+  { href: "/accounting", label: "会計", Icon: WalletIcon },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -61,9 +78,9 @@ export default function Navbar() {
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
                   active
                     ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
+                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
                 }`}>
-                <span className="text-base">{item.icon}</span>
+                <item.Icon className="w-5 h-5 flex-shrink-0" />
                 {item.label}
                 {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500" />}
               </Link>
@@ -113,7 +130,7 @@ export default function Navbar() {
               className={`flex-1 flex flex-col items-center gap-1 py-3 text-xs transition-all duration-150 ${
                 active ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-600"
               }`}>
-              <span className="text-xl">{item.icon}</span>
+              <item.Icon className="w-6 h-6" />
               {item.label}
               {active && <span className="w-1 h-1 rounded-full bg-blue-500" />}
             </Link>

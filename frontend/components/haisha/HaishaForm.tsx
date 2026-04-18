@@ -441,7 +441,7 @@ export default function HaishaForm() {
                 className="w-full border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors" />
             </div>
             <button onClick={getResponses} disabled={loadingSheet || !spreadsheetId}
-              className="w-full bg-green-600 hover:bg-green-700 active:scale-[0.98] disabled:bg-green-300 text-white font-medium py-2.5 rounded-xl text-sm transition-all duration-150">
+              className="w-full bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:bg-blue-300 text-white font-medium py-2.5 rounded-xl text-sm transition-all duration-150">
               {loadingSheet ? "取得中..." : "📥 回答を取得してメンバーに反映する"}
             </button>
             {sheetApplied && (
@@ -495,7 +495,7 @@ export default function HaishaForm() {
               {csvApplied && <span className="text-xs text-green-600 dark:text-green-400">✅ 反映済み</span>}
             </div>
             <button onClick={applyCsv}
-              className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-600 hover:bg-green-700 active:scale-[0.98] text-white transition-all duration-150">
+              className="w-full py-2.5 rounded-xl text-sm font-medium bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white transition-all duration-150">
               ✅ このデータでメンバーを設定する
             </button>
           </div>
@@ -609,20 +609,25 @@ export default function HaishaForm() {
                     color={result.unassigned?.length ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300" : "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"} />
                 </div>
                 {result.assignments.map((car) => (
-                  <div key={car.car_id} className="border-l-4 border-l-blue-400 border border-gray-100 dark:border-gray-700 rounded-xl p-3 transition-colors">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">🚗 車 {car.car_id}</p>
+                  <div key={car.car_id} className="border border-gray-100 dark:border-gray-700 rounded-xl p-3 transition-colors">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold flex items-center justify-center flex-shrink-0">{car.car_id}</span>
+                        <p className="text-base font-semibold text-gray-800 dark:text-gray-100">{car.members[0]}</p>
+                        <span className="text-xs text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded-md">運転手</span>
+                      </div>
                       <span className="text-xs text-gray-400">{car.members.length}名</span>
                     </div>
-                    <ul className="space-y-1.5">
-                      {car.members.map((member, i) => (
-                        <li key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${i === 0 ? "bg-blue-400" : "bg-green-400"}`} />
-                          {member}
-                          {i === 0 && <span className="text-xs text-blue-500 dark:text-blue-400 ml-auto">運転手</span>}
-                        </li>
-                      ))}
-                    </ul>
+                    {car.members.length > 1 && (
+                      <ul className="space-y-1 pl-8">
+                        {car.members.slice(1).map((member, i) => (
+                          <li key={i} className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0" />
+                            {member}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 ))}
                 {result.unassigned && result.unassigned.length > 0 && (
