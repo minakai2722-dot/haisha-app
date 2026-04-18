@@ -75,6 +75,7 @@ async def assign_members(data: EventData):
     W, driver_W = build_relation_matrix(passengers, drivers, data.p_score or -5)
 
     d_matrix = None
+    navitime_used = False
     if NAVITIME_API_KEY and GOOGLE_MAPS_API_KEY:
         try:
             target_arrival = None
@@ -90,22 +91,28 @@ async def assign_members(data: EventData):
                 [d.station for d in drivers],
                 target_arrival
             )
+            navitime_used = True
         except Exception:
             d_matrix = None
 
     if d_matrix is None:
         d_matrix = [[0] * len(drivers) for _ in range(len(passengers))]
 
+    distance_method = "navitime" if navitime_used else "greedy"
+
     if FIXSTARS_API_KEY:
         try:
             result = run_optimization_amplify(
                 passengers, drivers, d_matrix, C, W, driver_W, FIXSTARS_API_KEY
             )
+            result["distance_method"] = distance_method
             return result
         except Exception:
             pass
 
-    return run_greedy_assignment(passengers, drivers, d_matrix, C, W, driver_W)
+    result = run_greedy_assignment(passengers, drivers, d_matrix, C, W, driver_W)
+    result["distance_method"] = distance_method
+    return result
 
 
 # ==========================================

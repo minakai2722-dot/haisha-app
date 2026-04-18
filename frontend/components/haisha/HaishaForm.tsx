@@ -22,6 +22,7 @@ type Result = {
   assignments: Assignment[];
   unassigned: string[];
   method: string;
+  distance_method?: string;
   objective?: number;
   feasible?: boolean;
   error?: string;
@@ -598,6 +599,17 @@ export default function HaishaForm() {
               <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-1 rounded-md">
                 {result.method === "amplify" ? "🔬 Amplify最適化" : "📐 グリーディ法"}
               </span>
+            </div>
+            <div className="mb-3">
+              {result.distance_method === "navitime" ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1 rounded-full">
+                  🗺 Powered by NAVITIME API
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-full">
+                  ⚡ Powered by greedy algorithm
+                </span>
+              )}
             </div>
             {result.error ? (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-600 dark:text-red-400">⚠️ {result.error}</div>
