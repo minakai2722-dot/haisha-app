@@ -8,24 +8,25 @@
 
 ## 機能
 
-### 🚗 配車
+### 🚗 配車（公開中）
 - メンバーの名前・最寄り駅・役割（ドライバー/乗客）・定員・人間関係を入力
-- Google Maps API を使った移動時間の取得
+- NAVITIME API（RapidAPI経由）を使った電車乗車時間の取得
+- Google Maps Geocoding API で駅名→座標変換
 - Fixstars Amplify を使った最適配車計算（人間関係スコアを考慮）
 - CSVインポートによる一括入力
 - Googleフォーム・スプレッドシート連携
 
-### 💴 会計
+### 💴 会計（公開中）
 - 収入・支出の記録・管理
 - カレンダーのイベントごとに紐付けた収支管理
 - Adminパスワード（`Admin`）で保護
 
-### 📅 カレンダー
+### 📅 カレンダー（実装済み・非表示）
 - 月カレンダーで活動スケジュールを管理
 - Googleカレンダーへの自動追加（Googleログイン時）
 - イベントごとに会計・割り勘パネルを表示
 
-### 💸 割り勘
+### 💸 割り勘（実装済み・非表示）
 - イベント名・日付・時間帯を指定してセッション作成（カレンダーに自動反映）
 - メンバーの追加・管理
 - 3ステップで支払い追加（支払人 → 対象者 → 金額）
@@ -41,15 +42,17 @@
 | スタイリング | Tailwind CSS v4 |
 | 認証 | NextAuth.js（Google OAuth） |
 | バックエンド | FastAPI（Python） |
+| 経路計算 | NAVITIME API（RapidAPI経由） |
+| 座標変換 | Google Maps Geocoding API |
 | 最適化エンジン | Fixstars Amplify |
-| デプロイ | Vercel（フロントエンド） |
+| デプロイ | Vercel（フロント） / Render（バックエンド） |
 | データ保存 | localStorage |
 
 ---
 
 ## セットアップ
 
-### バックエンド（FastAPI）
+### バックエンド（FastAPI / Render）
 
 ```bash
 pip install -r requirements.txt
@@ -59,7 +62,8 @@ uvicorn main:app --reload
 `.env` に以下を設定：
 
 ```
-GOOGLE_MAPS_API_KEY=your_key
+GOOGLE_MAPS_API_KEY=your_key   # ジオコーディング（座標変換）用
+NAVITIME_API_KEY=your_key      # RapidAPI の X-RapidAPI-Key
 FIXSTARS_API_KEY=your_key
 ```
 
