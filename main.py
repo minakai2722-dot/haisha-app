@@ -72,6 +72,9 @@ async def assign_members(data: EventData):
     if len(passengers) > total_seats:
         return {"error": f"有効シート数({total_seats}席)が乗客数({len(passengers)}名)より少ないため、全員を配車できません。"}
 
+    for m in members:
+        m.station = normalize_station(m.station)
+
     W, driver_W = build_relation_matrix(passengers, drivers, data.p_score or -5)
 
     d_matrix = None
@@ -231,7 +234,7 @@ def _prefetch_coords(stations: list) -> None:
     gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
     def fetch_one(name):
-        result = gmaps.geocode(name)
+        result = gmaps.geocode(name + "駅")
         if not result:
             return name, None
         loc = result[0]['geometry']['location']
@@ -244,13 +247,16 @@ def _prefetch_coords(stations: list) -> None:
 
     save_json(COORD_CACHE_FILE, _coord_cache)
 
+def normalize_station(name: str) -> str:
+    return name.strip().rstrip("駅")
+
 def get_coords_with_cache(station_name: str) -> Optional[dict]:
     if station_name in _coord_cache:
         return _coord_cache[station_name]
 
     import googlemaps
     gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
-    result = gmaps.geocode(station_name)
+    result = gmaps.geocode(station_name + "駅")
     if not result:
         return None
 
