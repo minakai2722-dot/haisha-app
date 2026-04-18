@@ -5,12 +5,17 @@ from pydantic import BaseModel
 from typing import List, Optional
 import os
 import json
+import time
+import requests
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 FIXSTARS_API_KEY = os.environ.get("FIXSTARS_API_KEY", "")
+NAVITIME_API_KEY = os.environ.get("NAVITIME_API_KEY", "")
+NAVITIME_API_HOST = "navitime-route-totalnavi.p.rapidapi.com"
 
 app = FastAPI()
 
@@ -69,13 +74,20 @@ async def assign_members(data: EventData):
     W, driver_W = build_relation_matrix(passengers, drivers, data.p_score or -5)
 
     d_matrix = None
-    if GOOGLE_MAPS_API_KEY:
+    if NAVITIME_API_KEY and GOOGLE_MAPS_API_KEY:
         try:
-            d_matrix = get_distance_matrix(
+            target_arrival = None
+            if data.target_arrival:
+                try:
+                    target_arrival = datetime.fromisoformat(data.target_arrival)
+                except ValueError:
+                    pass
+            if target_arrival is None:
+                target_arrival = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+            d_matrix = get_distance_matrix_navitime(
                 [p.station for p in passengers],
                 [d.station for d in drivers],
-                GOOGLE_MAPS_API_KEY,
-                data.target_arrival
+                target_arrival
             )
         except Exception:
             d_matrix = None
@@ -168,11 +180,12 @@ def build_relation_matrix(
 
 
 # ==========================================
-# Google Maps Distance Matrix API（バッチ処理＋キャッシュ付き）
+# NAVITIME API による所要時間行列取得（キャッシュ付き）
 # ==========================================
 CACHE_FILE = 'distance_cache.json'
 USAGE_FILE = 'usage_stats.json'
-MONTHLY_LIMIT = 5000
+COORD_CACHE_FILE = 'coord_cache.json'
+RATE_LIMIT_PER_MIN = 50
 
 def load_json(filename, default):
     if os.path.exists(filename):
@@ -184,67 +197,106 @@ def save_json(filename, data):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-def get_distance_matrix(
+def get_coords_with_cache(station_name: str, coord_cache: dict) -> Optional[dict]:
+    if station_name in coord_cache:
+        return coord_cache[station_name]
+
+    import googlemaps
+    gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+    result = gmaps.geocode(station_name)
+    if not result:
+        return None
+
+    loc = result[0]['geometry']['location']
+    coord = {"lat": loc['lat'], "lon": loc['lng']}
+    coord_cache[station_name] = coord
+    save_json(COORD_CACHE_FILE, coord_cache)
+    return coord
+
+def call_navitime_api(start_coord: dict, goal_coord: dict, target_arrival: datetime) -> Optional[int]:
+    url = f"https://{NAVITIME_API_HOST}/route_transit"
+    arrival_str = target_arrival.strftime('%Y-%m-%dT%H:%M:%S')
+
+    response = requests.get(
+        url,
+        headers={"X-RapidAPI-Key": NAVITIME_API_KEY, "X-RapidAPI-Host": NAVITIME_API_HOST},
+        params={
+            "start": f"{start_coord['lat']},{start_coord['lon']}",
+            "goal": f"{goal_coord['lat']},{goal_coord['lon']}",
+            "goal_time": arrival_str,
+            "limit": "1"
+        }
+    )
+
+    if response.status_code != 200:
+        return None
+
+    try:
+        data = response.json()
+        sections = data['items'][0].get('sections', [])
+        train_sections = [
+            s for s in sections
+            if s.get('type') == 'move'
+            and s.get('move') != 'walk'
+            and s.get('line_name') != '徒歩'
+        ]
+        if not train_sections:
+            return data['items'][0]['summary']['move']['time']
+
+        start_dt = datetime.fromisoformat(train_sections[0]['from_time'].replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(train_sections[-1]['to_time'].replace('Z', '+00:00'))
+        return int((end_dt - start_dt).total_seconds() / 60)
+    except (KeyError, IndexError, ValueError):
+        return None
+
+def get_distance_matrix_navitime(
     passenger_stations: List[str],
     driver_stations: List[str],
-    api_key: str,
-    target_arrival_str: str = ""
+    target_arrival: datetime
 ) -> List[List[int]]:
-    import googlemaps
-    from datetime import datetime
-
-    gmaps = googlemaps.Client(key=api_key)
     cache = load_json(CACHE_FILE, {})
-    usage = load_json(USAGE_FILE, {"total_elements": 0})
+    coord_cache = load_json(COORD_CACHE_FILE, {})
+    usage = load_json(USAGE_FILE, {"navitime_calls": 0})
 
-    missing_p_stations = []
-    for p in passenger_stations:
-        for d in driver_stations:
-            if f"{p}_{d}" not in cache:
-                if p not in missing_p_stations:
-                    missing_p_stations.append(p)
+    api_counter = 0
+    d_matrix = []
 
-    if missing_p_stations:
-        max_p_per_request = max(1, min(25, 100 // len(driver_stations)))
+    for p_station in passenger_stations:
+        row = []
+        p_coord = get_coords_with_cache(p_station, coord_cache)
 
-        for i in range(0, len(missing_p_stations), max_p_per_request):
-            chunk = missing_p_stations[i: i + max_p_per_request]
-            requested = len(chunk) * len(driver_stations)
+        for d_station in driver_stations:
+            cache_key = f"{p_station}_{d_station}"
 
-            if usage["total_elements"] + requested > MONTHLY_LIMIT:
-                raise Exception("APIの月間使用上限に達しました。")
+            if p_station == d_station:
+                row.append(0)
+                continue
+            if cache_key in cache:
+                row.append(cache[cache_key])
+                continue
 
-            kwargs = dict(
-                origins=chunk,
-                destinations=driver_stations,
-                mode="transit",
-                language="ja",
-                transit_mode=["bus", "rail"]
-            )
-            if target_arrival_str:
-                try:
-                    kwargs["arrival_time"] = datetime.fromisoformat(target_arrival_str)
-                except ValueError:
-                    pass
+            if api_counter > 0 and api_counter % RATE_LIMIT_PER_MIN == 0:
+                time.sleep(60)
 
-            result = gmaps.distance_matrix(**kwargs)
+            d_coord = get_coords_with_cache(d_station, coord_cache)
 
-            for p_idx, row in enumerate(result['rows']):
-                p_station = chunk[p_idx]
-                for d_idx, element in enumerate(row['elements']):
-                    d_station = driver_stations[d_idx]
-                    key = f"{p_station}_{d_station}"
-                    cache[key] = element['duration']['value'] // 60 if element['status'] == 'OK' else 999
+            if not p_coord or not d_coord:
+                duration = 999
+            else:
+                duration = call_navitime_api(p_coord, d_coord, target_arrival)
+                if duration is None:
+                    duration = 999
+                api_counter += 1
+                usage["navitime_calls"] += 1
 
-            usage["total_elements"] += requested
+            cache[cache_key] = duration
+            row.append(duration)
+            save_json(CACHE_FILE, cache)
+            save_json(USAGE_FILE, usage)
 
-        save_json(USAGE_FILE, usage)
-        save_json(CACHE_FILE, cache)
+        d_matrix.append(row)
 
-    return [
-        [cache.get(f"{p}_{d}", 999) for d in driver_stations]
-        for p in passenger_stations
-    ]
+    return d_matrix
 
 
 # ==========================================
